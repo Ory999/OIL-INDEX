@@ -83,7 +83,7 @@ def build_quant_index():
     # ── Partial composite (quant only, 0-100) ─────────────────────────────
     # Weighted combination of available components
     # When NLP scores are added, weights will be rescaled to full 100%
-    weights = {"fundamentals": 0.60, "congress": 0.40}
+    weights = {"fundamentals": 1.0}
 
     comp_df    = pd.DataFrame(components).fillna(0.5)
     raw_score  = sum(comp_df[k] * w for k, w in weights.items() if k in comp_df)
