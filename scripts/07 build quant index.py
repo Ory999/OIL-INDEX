@@ -80,20 +80,6 @@ def build_quant_index():
         components["fundamentals"] = pd.Series(0.5, index=master.index)
         log.warning("  No fundamental columns found — using neutral 0.5")
 
-    # ── Component 5: Congressional Trade Signal (weight = 10% of final) ───
-    if "congress_net_signal" in master.columns:
-        # Selling = fear; buying = greed
-        # Invert: net selling = fear = low score
-        cong_raw = -master["congress_net_signal"].fillna(0)
-        components["congress"] = pd.Series(
-            scaler.fit_transform(cong_raw.values.reshape(-1, 1)).flatten(),
-            index=cong_raw.index,
-        )
-        log.info("  ✓ Congressional trade component built")
-    else:
-        components["congress"] = pd.Series(0.5, index=master.index)
-        log.warning("  congress_net_signal not found — using neutral 0.5")
-
     # ── Partial composite (quant only, 0-100) ─────────────────────────────
     # Weighted combination of available components
     # When NLP scores are added, weights will be rescaled to full 100%
