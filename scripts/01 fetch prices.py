@@ -10,6 +10,7 @@ from datetime import datetime
 import yfinance as yf
 import numpy as np
 import pandas as pd
+import os, logging, time
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s — %(message)s")
 log = logging.getLogger(__name__)
@@ -28,13 +29,22 @@ TICKERS = {
 def fetch_prices():
     log.info(f"Fetching prices: {START_DATE} → {END_DATE}")
 
-    raw = yf.download(
-        list(TICKERS.values()),
-        start=START_DATE,
-        end=END_DATE,
-        progress=False,
-        auto_adjust=True,
-    )
+    raw = pd.DataFrame()
+    for attempt in range(3):
+        try:
+            raw = yf.download(
+                list(TICKERS.values()),
+                start=START_DATE,
+                end=END_DATE,
+                progress=False,
+                auto_adjust=True,
+            )
+            if len(raw) > 0:
+                break
+            log.warning(f"  Attempt {attempt+1} returned empty — retrying in 15s")
+        except Exception as e:
+            log.warning(f"  Attempt {attempt+1} failed: {e} — retrying in 15s")
+        time.sleep(15)
 
     # Handle both single and multi-ticker download formats
     if isinstance(raw.columns, pd.MultiIndex):
@@ -61,7 +71,10 @@ def fetch_prices():
     df.to_parquet(out)
     log.info(f"✓ Prices saved → {out}  ({len(df)} rows)")
     log.info(f"  Columns: {list(df.columns)}")
-    log.info(f"  Latest oil price: ${df['oil'].iloc[-1]:.2f}")
+    if len(df) > 0 and "oil" in df.columns and len(df["oil"].dropna()) > 0:
+        log.info(f"  Latest oil price: ${df['oil'].iloc[-1]:.2f}")
+    else:
+        log.warning("  Price data empty — possible Yahoo rate limit")
     return df
 
 if __name__ == "__main__":
