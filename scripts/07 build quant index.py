@@ -100,10 +100,8 @@ def build_quant_index():
         "prcsi_quant":        quant_prcsi_smooth,
         "regime_quant":       quant_prcsi_smooth.apply(classify_regime),
         "comp_fundamentals":  comp_df["fundamentals"],
-        "comp_congress":      comp_df["congress"],
-        # Include oil price for reference
-        "oil_price":          master["oil"]          if "oil"          in master.columns else np.nan,
-        "oil_logret":         master["oil_logret"]   if "oil_logret"   in master.columns else np.nan,
+        "oil_price":          master["oil"]        if "oil"        in master.columns else np.nan,
+        "oil_logret":         master["oil_logret"] if "oil_logret" in master.columns else np.nan,
     })
 
     # ── Save ──────────────────────────────────────────────────────────────
