@@ -1,0 +1,126 @@
+# ============================================================
+# PRCSI — Quantitative Pipeline
+# Runs daily at 06:00 UTC on weekdays (markets closed overnight)
+# Fetches all numerical data sources, assembles master dataset,
+# builds partial PRCSI index from quantitative components only.
+#
+# Granger causality + VAR run in a SEPARATE workflow triggered
+# after the qualitative pipeline has merged NLP scores (-1 to +1)
+# into master_with_nlp.parquet
+# ============================================================
+name: Quantitative Pipeline
+
+on:
+  schedule:
+    - cron: "0 6 * * 1-5"   # 06:00 UTC, Mon–Fri
+  workflow_dispatch:          # manual trigger from GitHub UI
+
+permissions:
+  contents: write             # needed to push parquet artefacts to repo
+
+jobs:
+  quantitative:
+    name: Fetch & Assemble Quantitative Data
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      EIA_API_KEY:      ${{ secrets.EIA_API_KEY }}
+      FRED_API_KEY:     ${{ secrets.FRED_API_KEY }}
+      QUIVER_API_KEY:   ${{ secrets.QUIVER_API_KEY }}
+      START_DATE:       "2007-01-01"
+      DATA_DIR:         data/raw
+      FEATURES_DIR:     data/features
+      RESULTS_DIR:      data/results
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Python setup ──────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements_quant.txt
+
+      # ── 3. Create data directories ───────────────────────────────────────
+      - name: Create data directories
+        run: mkdir -p data/raw data/features data/results
+
+      # ── 4. Restore cached data (skip re-downloading unchanged history) ───
+      - name: Restore data cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/raw/cot_crude.parquet
+          key: cot-annual-${{ github.run_number }}
+          restore-keys: |
+            cot-annual-
+
+      # ── 5. Pipeline steps ─────────────────────────────────────────────────
+      - name: "[01] Fetch market prices (yfinance)"
+        run: python scripts/01_fetch_prices.py
+
+      - name: "[02] Fetch EIA fundamentals"
+        run: python scripts/02_fetch_eia.py
+        env:
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+
+      - name: "[03] Fetch FRED macro controls"
+        run: python scripts/03_fetch_fred.py
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+
+      - name: "[04] Fetch COT futures positioning (CFTC)"
+        run: python scripts/04_fetch_cot.py
+
+      - name: "[05] Fetch congressional trades (STOCK Act)"
+        run: python scripts/05_fetch_congress.py
+        env:
+          QUIVER_API_KEY: ${{ secrets.QUIVER_API_KEY }}
+
+      - name: "[06] Assemble master dataset"
+        run: python scripts/06_assemble_master.py
+
+      - name: "[07] Build partial quantitative index"
+        run: python scripts/07_build_quant_index.py
+
+      # ── 6. Upload artefacts ───────────────────────────────────────────────
+      - name: Upload data artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: quant-data-${{ github.run_number }}
+          path: |
+            data/raw/*.parquet
+            data/features/*.parquet
+            data/results/*.csv
+            data/results/*.json
+          retention-days: 7
+
+      # ── 7. Commit updated parquet files back to repo ─────────────────────
+      - name: Commit updated data files
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/raw/*.parquet data/features/*.parquet data/results/*.csv data/results/*.json || true
+          git diff --staged --quiet || git commit -m "chore: daily quant update $(date +%Y-%m-%d)"
+          git push || true
+
+      # ── 8. Notify on failure ─────────────────────────────────────────────
+      - name: Report status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Quantitative pipeline completed successfully"
+            cat data/results/pipeline_metadata.json 2>/dev/null || true
+          else
+            echo "❌ Quantitative pipeline FAILED — check logs above"
+            exit 1
+          fi

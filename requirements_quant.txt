@@ -1,0 +1,11 @@
+yfinance==0.2.54
+pandas==2.2.3
+numpy==1.26.4
+requests==2.32.3
+fredapi==0.5.2
+statsmodels==0.14.4
+scikit-learn==1.5.2
+shap==0.46.0
+pyarrow==17.0.0
+python-dotenv==1.0.1
+tqdm==4.67.1

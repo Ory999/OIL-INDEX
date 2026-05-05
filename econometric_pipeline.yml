@@ -1,0 +1,82 @@
+# ============================================================
+# PRCSI — Econometric Analysis Pipeline
+# Triggered AFTER the qualitative pipeline has produced
+# NLP sentiment scores (-1 to +1) merged into master dataset.
+#
+# Runs: Granger causality, VAR + IRF, SHAP, full PRCSI index.
+# This tests the COMPLETE combined signal (quant + qual),
+# which is the actual research question of the project.
+# ============================================================
+name: Econometric Analysis (Full PRCSI)
+
+on:
+  # Triggered automatically when qualitative pipeline pushes scores
+  workflow_run:
+    workflows: ["Qualitative NLP Pipeline"]
+    types: [completed]
+
+  # Also allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  econometrics:
+    name: Granger + VAR + PRCSI Index
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Only run if qualitative pipeline succeeded (or manual trigger)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements_quant.txt
+
+      - name: Check qualitative scores are available
+        run: |
+          if [ ! -f data/features/master_with_nlp.parquet ]; then
+            echo "⚠️  master_with_nlp.parquet not found"
+            echo "   Falling back to quantitative-only master dataset"
+            cp data/features/master_quant.parquet data/features/master_with_nlp.parquet || true
+          else
+            echo "✅ NLP scores found — running full combined Granger test"
+          fi
+
+      - name: "[08] Stationarity tests (ADF)"
+        run: python scripts/08_stationarity.py
+
+      - name: "[09] Granger causality — full combined signal"
+        run: python scripts/09_granger_causality.py
+
+      - name: "[10] VAR model + Impulse Response Functions"
+        run: python scripts/10_var_irf.py
+
+      - name: "[11] SHAP feature importance"
+        run: python scripts/11_shap_analysis.py
+
+      - name: "[12] Build full PRCSI index (0-100)"
+        run: python scripts/12_build_full_index.py
+
+      - name: Upload econometric results
+        uses: actions/upload-artifact@v4
+        with:
+          name: econometric-results-${{ github.run_number }}
+          path: data/results/
+          retention-days: 30
+
+      - name: Commit results
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/results/ || true
+          git diff --staged --quiet || git commit -m "chore: econometric results $(date +%Y-%m-%d)"
+          git push || true
