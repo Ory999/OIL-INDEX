@@ -127,7 +127,6 @@ def build_full_index():
             "rhetoric":        0.25,
             "divergence":      0.20,
             "fundamentals":    0.15,
-            "congress":        0.10,
         }
     else:
         log.warning("  NLP scores absent — redistributing weights to fundamentals")
