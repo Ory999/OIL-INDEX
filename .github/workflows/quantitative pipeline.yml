@@ -36,7 +36,7 @@ jobs:
       - name: Create data directories
         run: mkdir -p data/raw data/features data/results
 
-      - name: "[01] Fetch market prices (yfinance)"
+      - name: "[01] Fetch market prices"
         run: python3 scripts/01_fetch_prices.py
 
       - name: "[02] Fetch EIA fundamentals"
@@ -49,7 +49,7 @@ jobs:
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
 
-      - name: "[04] Fetch COT futures positioning (CFTC)"
+      - name: "[04] Fetch COT positioning"
         run: python3 scripts/04_fetch_cot.py
 
       - name: "[06] Assemble master dataset"
@@ -81,9 +81,9 @@ jobs:
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Quantitative pipeline completed successfully"
+            echo "✅ Pipeline completed successfully"
             cat data/results/pipeline_metadata.json 2>/dev/null || true
           else
-            echo "❌ Quantitative pipeline FAILED — check logs above"
+            echo "❌ Pipeline FAILED"
             exit 1
           fi
