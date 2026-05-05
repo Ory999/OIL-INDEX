@@ -1,0 +1,37 @@
+# ============================================================
+# PRCSI — Unified Requirements
+# Covers both quantitative and qualitative pipelines
+# ============================================================
+ 
+# ── Core data ────────────────────────────────────────────────
+yfinance==0.2.54
+pandas==2.2.3
+numpy==1.26.4
+requests==2.32.3
+python-dotenv==1.0.1
+pyarrow==17.0.0
+tqdm==4.67.1
+ 
+# ── Quantitative / econometrics ──────────────────────────────
+fredapi==0.5.2
+statsmodels==0.14.4
+scikit-learn==1.5.2
+shap==0.46.0
+scipy==1.13.1
+ 
+# ── Qualitative / NLP ────────────────────────────────────────
+transformers==4.44.2
+torch==2.4.1
+sentence-transformers==3.1.1
+bertopic==0.16.4
+pdfplumber==0.11.4
+beautifulsoup4==4.12.3
+lxml==5.3.0
+feedparser==6.0.11
+anthropic==0.34.2
+openai==1.47.0
+ 
+# ── Visualisation ─────────────────────────────────────────────
+matplotlib==3.9.2
+seaborn==0.13.2
+ 
