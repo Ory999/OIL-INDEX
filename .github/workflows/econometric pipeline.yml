@@ -22,14 +22,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
 
       - name: Check qualitative scores are available
         run: |
@@ -41,20 +37,20 @@ jobs:
             echo "✅ NLP scores found — running full combined Granger test"
           fi
 
-      - name: "[08] Stationarity tests (ADF)"
-        run: python scripts/08_stationarity.py
+      - name: "[08] Stationarity tests"
+        run: python3 "scripts/08 stationarity.py"
 
-      - name: "[09] Granger causality — full combined signal"
-        run: python scripts/09_granger_causality.py
+      - name: "[09] Granger causality"
+        run: python3 "scripts/09 granger causality.py"
 
-      - name: "[10] VAR model + Impulse Response Functions"
-        run: python scripts/10_var_irf.py
+      - name: "[10] VAR model + IRF"
+        run: python3 "scripts/10 var irf.py"
 
       - name: "[11] SHAP feature importance"
-        run: python scripts/11_shap_analysis.py
+        run: python3 "scripts/11 shap analysis.py"
 
-      - name: "[12] Build full PRCSI index (0-100)"
-        run: python scripts/12_build_full_index.py
+      - name: "[12] Build full PRCSI index"
+        run: python3 "scripts/12 build full index.py"
 
       - name: Upload econometric results
         uses: actions/upload-artifact@v4
