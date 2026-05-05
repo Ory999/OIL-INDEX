@@ -44,7 +44,6 @@ def assemble_master():
     eia     = load_parquet(RAW_DIR / "eia_fundamentals.parquet", "EIA")
     fred    = load_parquet(RAW_DIR / "fred_macro.parquet",       "FRED")
     cot     = load_parquet(RAW_DIR / "cot_crude.parquet",        "COT")
-    cong    = load_parquet(RAW_DIR / "congress_daily.parquet",   "Congress")
 
     if prices is None:
         raise RuntimeError("prices.parquet not found — run 01_fetch_prices.py first")
@@ -56,7 +55,6 @@ def assemble_master():
         (eia,  "EIA"),
         (fred, "FRED"),
         (cot,  "COT"),
-        (cong, "CONGRESS"),
     ]:
         if df is None:
             log.warning(f"  Skipping {name} — not available")
@@ -71,7 +69,7 @@ def assemble_master():
     fill_cols = [c for c in master.columns if any(
         x in c for x in [
             "crude_stocks", "refinery", "crude_production", "crude_imports",
-            "eia_surprise", "cot_net", "cot_long", "congress_",
+            "eia_surprise", "cot_net", "cot_long",
             "tips_", "breakeven", "umich", "fed_funds", "sp500",
         ]
     )]
