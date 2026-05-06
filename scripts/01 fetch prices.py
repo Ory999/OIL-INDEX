@@ -4,13 +4,12 @@ Sources: yfinance
 Outputs: data/raw/prices.parquet
 Gold removed from scope. WTI oil is primary target variable.
 """
-import os, logging
+import os, logging, time
 from pathlib import Path
 from datetime import datetime
 import yfinance as yf
 import numpy as np
 import pandas as pd
-import os, logging, time
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s — %(message)s")
 log = logging.getLogger(__name__)
@@ -46,6 +45,11 @@ def fetch_prices():
             log.warning(f"  Attempt {attempt+1} failed: {e} — retrying in 15s")
         time.sleep(15)
 
+    if len(raw) == 0:
+        log.warning("  All yfinance attempts failed — saving empty parquet")
+        pd.DataFrame().to_parquet(RAW_DIR / "prices.parquet")
+        return pd.DataFrame()
+
     # Handle both single and multi-ticker download formats
     if isinstance(raw.columns, pd.MultiIndex):
         prices = raw["Close"].copy()
@@ -57,11 +61,9 @@ def fetch_prices():
     prices.index = pd.to_datetime(prices.index)
     prices       = prices.resample("B").last().ffill()
 
-    # Percentage returns
     returns = prices.pct_change()
     returns.columns = [f"{c}_return" for c in prices.columns]
 
-    # Log returns — preferred for Granger causality (more stationary)
     log_ret = np.log(prices / prices.shift(1))
     log_ret.columns = [f"{c}_logret" for c in prices.columns]
 
@@ -71,10 +73,12 @@ def fetch_prices():
     df.to_parquet(out)
     log.info(f"✓ Prices saved → {out}  ({len(df)} rows)")
     log.info(f"  Columns: {list(df.columns)}")
+
     if len(df) > 0 and "oil" in df.columns and len(df["oil"].dropna()) > 0:
         log.info(f"  Latest oil price: ${df['oil'].iloc[-1]:.2f}")
     else:
         log.warning("  Price data empty — possible Yahoo rate limit")
+
     return df
 
 if __name__ == "__main__":
