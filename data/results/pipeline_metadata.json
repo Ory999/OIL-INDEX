@@ -41,5 +41,10 @@
   "prcsi_quant_regime": "NEUTRAL",
   "quant_pipeline_complete": true,
   "quant_run_timestamp": "2026-05-06T14:49:31.338001",
-  "nlp_scores_merged": false
+  "nlp_scores_merged": true,
+  "nlp_merge_timestamp": "2026-05-06T17:26:48.794658",
+  "nlp_coverage_pct": 40.01,
+  "n_nlp_features": 42,
+  "n_combined_features": 70,
+  "combined_date_end": "2026-05-05"
 }
