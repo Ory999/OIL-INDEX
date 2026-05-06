@@ -80,7 +80,11 @@ def build_quant_index():
     result.to_parquet(RESULTS_DIR / "prcsi_quant_partial.parquet")
     result.to_csv(RESULTS_DIR    / "prcsi_quant_partial.csv")
 
-    latest_score  = round(float(quant_prcsi_smooth.iloc[-1]), 2)
+    if len(quant_prcsi_smooth.dropna()) == 0:
+        log.warning("  PRCSI score empty — insufficient data")
+        return pd.DataFrame()
+
+    latest_score  = round(float(quant_prcsi_smooth.dropna().iloc[-1]), 2)
     latest_regime = classify_regime(latest_score)
 
     log.info(f"\n✓ Partial quantitative PRCSI built")
