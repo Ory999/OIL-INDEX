@@ -11,6 +11,7 @@ requests==2.32.3
 python-dotenv==1.0.1
 pyarrow==17.0.0
 tqdm==4.67.1
+httpx==0.27.0
  
 # ── Quantitative / econometrics ──────────────────────────────
 fredapi==0.5.2
