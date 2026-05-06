@@ -1,22 +1,13 @@
 """
 Script 20 — LLM Multidimensional Scoring
-Model: Locally hosted open-source model via OpenAI-compatible API
-       (ngrok tunnel to AI Lab GPU)
+Model: Locally hosted openai/gpt-oss-20b via ngrok tunnel
 
-Outputs: data/raw/llm_scores.parquet
+All documents scored by LLM only. If a document fails after retries
+it receives neutral scores (0.0) rather than FinBERT substitution.
+FinBERT scores remain available as a separate baseline column for
+academic comparison but do NOT replace LLM scores.
 
-All scores are on a strict -1.0 to +1.0 scale:
-  -1.0 = extremely bearish/negative signal for oil prices
-   0.0 = neutral / no directional signal
-  +1.0 = extremely bullish/positive signal for oil prices
-
-Theoretical link:
-  - oil_impact_score:              Direct oil price directional signal
-  - supply_disruption_signal:      Supply-side risk (Kilian 2009 supply shock proxy)
-  - demand_outlook_signal:         Demand-side outlook (Kilian 2009 demand shock proxy)
-  - geopolitical_risk_signal:      Conflict/sanctions risk premium
-  - surface_vs_implied_divergence: Information Asymmetry operationalisation (Akerlof 1970)
-  - institutional_confidence:      How certain/committed the institution sounds
+All scores on strict -1.0 to +1.0 scale.
 """
 import os, json, logging, time, re
 from pathlib import Path
@@ -31,10 +22,11 @@ log = logging.getLogger(__name__)
 RAW_DIR = Path(os.getenv("DATA_DIR", "data/raw"))
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Model configuration ───────────────────────────────────────────────────
 LLM_BASE_URL       = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
 LLM_MODEL          = os.getenv("LLM_MODEL",    "openai/gpt-oss-20b")
 LLM_CONF_THRESHOLD = 0.75
+MAX_RETRIES        = 3
+RETRY_DELAY        = 5.0   # seconds between retries
 
 SOURCE_CONTEXT = {
     "OPEC_MOMR":        "OPEC Monthly Oil Market Report — official production cartel assessment",
@@ -131,51 +123,90 @@ Return ONLY this JSON object with no other text:
 }}"""
 
 
+def neutral_scores(reason: str = "LLM failed after retries") -> dict:
+    """
+    Return neutral 0.0 scores when LLM fails after all retries.
+    These are clearly marked as failed so they can be filtered
+    or imputed in downstream analysis.
+    """
+    return {
+        "oil_impact_score":              0.0,
+        "supply_disruption_signal":      0.0,
+        "demand_outlook_signal":         0.0,
+        "geopolitical_risk_signal":      0.0,
+        "surface_vs_implied_divergence": 0.0,
+        "institutional_confidence":      0.0,
+        "dominant_theme":                "NEUTRAL",
+        "reasoning":                     reason,
+        "llm_scored":                    False,
+        "llm_failed":                    True,
+    }
+
+
 def get_llm_client():
-    """
-    Connect to locally hosted model via ngrok tunnel.
-    Falls back to FinBERT if unavailable.
-    Returns (client, model_name, is_local).
-    """
+    """Connect to locally hosted model via ngrok tunnel."""
     try:
         client = OpenAI(
             base_url=LLM_BASE_URL,
             api_key="none",
             http_client=httpx.Client(
                 headers={"ngrok-skip-browser-warning": "true"},
-                timeout=30.0,
+                timeout=60.0,
             )
         )
         models = client.models.list()
         model  = models.data[0].id if models.data else LLM_MODEL
         log.info(f"✓ Connected to local model: {model} at {LLM_BASE_URL}")
-        return client, model, True
+        return client, model
     except Exception as e:
-        log.warning(f"  Local model unavailable: {e}")
-        log.info("  No Anthropic fallback — all documents will use FinBERT scores")
-        return None, None, False
+        raise ConnectionError(f"Cannot connect to local model at {LLM_BASE_URL}: {e}")
 
 
-def score_document_openai(client, model: str, text: str,
-                           source: str, date: str) -> dict | None:
-    """Score via OpenAI-compatible API."""
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": build_user_prompt(text, source, date)},
-            ],
-            temperature=0.1,
-            max_tokens=400,
-        )
-        raw = response.choices[0].message.content.strip()
-        if "```" in raw:
-            raw = re.sub(r'```json?|```', '', raw).strip()
-        return json.loads(raw)
-    except Exception as e:
-        log.debug(f"  LLM scoring failed: {e}")
-        return None
+def score_document_with_retry(client, model: str, text: str,
+                               source: str, date: str) -> dict:
+    """
+    Score a document with retry logic.
+    Tries MAX_RETRIES times before returning neutral scores.
+    Never falls back to FinBERT — neutral 0.0 is preferable to
+    a misrepresented classification score.
+    """
+    last_error = ""
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",   "content": build_user_prompt(text, source, date)},
+                ],
+                temperature=0.1,
+                max_tokens=400,
+            )
+            raw = response.choices[0].message.content.strip()
+
+            # Strip markdown if model wraps response
+            if "```" in raw:
+                raw = re.sub(r'```json?|```', '', raw).strip()
+
+            scores = json.loads(raw)
+            scores["llm_scored"] = True
+            scores["llm_failed"] = False
+            return scores
+
+        except json.JSONDecodeError as e:
+            last_error = f"JSON parse error: {e}"
+            log.debug(f"  Attempt {attempt}/{MAX_RETRIES} — {last_error}")
+            # Give model a moment then retry
+            time.sleep(RETRY_DELAY)
+
+        except Exception as e:
+            last_error = str(e)
+            log.debug(f"  Attempt {attempt}/{MAX_RETRIES} — LLM call failed: {e}")
+            time.sleep(RETRY_DELAY)
+
+    log.warning(f"  All {MAX_RETRIES} attempts failed — using neutral scores ({last_error[:60]})")
+    return neutral_scores(f"Failed after {MAX_RETRIES} retries: {last_error[:80]}")
 
 
 def validate_and_clip_scores(scores: dict) -> dict:
@@ -199,22 +230,6 @@ def validate_and_clip_scores(scores: dict) -> dict:
     return scores
 
 
-def finbert_fallback_scores(finbert_row: pd.Series) -> dict:
-    """Generate LLM-format scores from FinBERT when LLM is unavailable."""
-    fb_score = float(finbert_row.get("finbert_score", 0.0))
-    return {
-        "oil_impact_score":              fb_score,
-        "supply_disruption_signal":      max(0, -fb_score),
-        "demand_outlook_signal":         fb_score * 0.5,
-        "geopolitical_risk_signal":      abs(fb_score) * 0.4,
-        "surface_vs_implied_divergence": 0.0,
-        "institutional_confidence":      float(finbert_row.get("finbert_confidence", 0.5)),
-        "dominant_theme":                "UNKNOWN",
-        "reasoning":                     "FinBERT fallback — LLM unavailable",
-        "llm_scored":                    False,
-    }
-
-
 def run_llm_scoring():
     finbert_path = RAW_DIR / "finbert_scores.parquet"
     out          = RAW_DIR / "llm_scores.parquet"
@@ -228,55 +243,61 @@ def run_llm_scoring():
         log.warning("FinBERT corpus empty — skipping LLM scoring")
         return pd.DataFrame()
 
-    client, model, is_local = get_llm_client()
-    records = []
+    # Connect to LLM — raise immediately if unavailable
+    # (no silent fallback to FinBERT)
+    try:
+        client, model = get_llm_client()
+    except ConnectionError as e:
+        log.error(f"❌ {e}")
+        log.error("  LLM is required — cannot proceed without local model")
+        log.error("  Ensure ngrok tunnel is active and LLM_BASE_URL secret is current")
+        raise
 
-    log.info(f"Scoring {len(corpus)} documents...")
+    records     = []
+    failed      = 0
+    total       = len(corpus)
+
+    log.info(f"Scoring {total} documents with {model}...")
+    log.info(f"  Max retries per document: {MAX_RETRIES}")
+    log.info(f"  Neutral scores assigned on failure (no FinBERT substitution)")
 
     for idx, row in corpus.iterrows():
         text   = str(row.get("text_clean", ""))
         source = str(row.get("source", "UNKNOWN"))
         date   = str(row["date"].date() if hasattr(row["date"], "date") else row["date"])
 
-        scores = None
+        scores = score_document_with_retry(client, model, text, source, date)
 
-        if client is not None:
-            scores = score_document_openai(client, model, text, source, date)
-
-            if scores is not None:
-                conf = scores.get("institutional_confidence", 1.0)
-                if conf < LLM_CONF_THRESHOLD:
-                    log.debug(f"  Low confidence ({conf:.2f}) — blending with FinBERT")
-                    fb    = finbert_fallback_scores(row)
-                    blend = 1.0 - conf
-                    scores["oil_impact_score"] = (
-                        scores["oil_impact_score"] * (1 - blend)
-                        + fb["oil_impact_score"] * blend
-                    )
-
-        if scores is None:
-            scores = finbert_fallback_scores(row)
-        else:
-            scores["llm_scored"] = True
+        if scores.get("llm_failed"):
+            failed += 1
 
         scores = validate_and_clip_scores(scores)
         scores["doc_index"] = idx
         records.append(scores)
 
+        # Polite rate limiting
         time.sleep(0.3)
+
+        # Progress log every 50 documents
+        if (idx + 1) % 50 == 0:
+            log.info(f"  Progress: {idx + 1}/{total} documents "
+                     f"({failed} failed so far)")
 
     result_df = pd.DataFrame(records).set_index("doc_index")
     final     = pd.concat([corpus.reset_index(drop=True),
                             result_df.reset_index(drop=True)], axis=1)
     final.to_parquet(out)
 
-    llm_pct = result_df.get("llm_scored", pd.Series(False)).mean() * 100
-    log.info(f"✓ LLM scores saved → {out}")
-    log.info(f"  LLM scored:      {llm_pct:.1f}%")
-    log.info(f"  FinBERT fallback: {100 - llm_pct:.1f}%")
-    log.info(f"  Mean oil_impact_score by source:")
+    success_pct = (total - failed) / total * 100
+    log.info(f"\n✓ LLM scoring complete → {out}")
+    log.info(f"  Total documents:    {total}")
+    log.info(f"  LLM scored:         {total - failed} ({success_pct:.1f}%)")
+    log.info(f"  Neutral (failed):   {failed} ({100 - success_pct:.1f}%)")
+    log.info(f"\n  Mean scores by source:")
     for src, grp in final.groupby("source"):
-        log.info(f"    {src:25s}: {grp['oil_impact_score'].mean():+.4f}")
+        scored = grp[grp["llm_failed"] == False] if "llm_failed" in grp else grp
+        log.info(f"    {src:25s}: oil_impact={grp['oil_impact_score'].mean():+.4f}  "
+                 f"divergence={grp['surface_vs_implied_divergence'].mean():.4f}")
 
     return final
 
