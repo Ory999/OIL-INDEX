@@ -50,7 +50,7 @@ def build_combined_corpus():
 
         df = df[["date", "source", "text"]].copy()
         df["source"] = source_label
-        df["date"]   = pd.to_datetime(df["date"])
+        df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
         dfs.append(df)
         log.info(f"  ✓ {source_label}: {len(df)} documents")
 
@@ -64,6 +64,8 @@ def build_combined_corpus():
     corpus = corpus[corpus["text"].str.len() > 100]
     corpus["text_clean"] = corpus["text"].apply(clean_text)
     corpus["word_count"] = corpus["text_clean"].str.split().str.len()
+    # Strip timezone info from all dates for consistent sorting
+    corpus["date"] = pd.to_datetime(corpus["date"]).dt.tz_localize(None)
     corpus = corpus.sort_values("date").reset_index(drop=True)
 
     corpus.to_parquet(out)
