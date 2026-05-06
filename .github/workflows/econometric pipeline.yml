@@ -17,6 +17,10 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
 
+    env:
+      FEATURES_DIR: data/features
+      RESULTS_DIR:  data/results
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,6 +30,9 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
+
+      - name: Create data directories
+        run: mkdir -p data/features data/results
 
       - name: Check qualitative scores are available
         run: |
@@ -37,20 +44,20 @@ jobs:
             echo "✅ NLP scores found — running full combined Granger test"
           fi
 
-      - name: "[08] Stationarity tests"
-        run: python3 "scripts/08 stationarity.py"
+      - name: Stationarity tests
+        run: python3 "quant/08 stationarity.py"
 
-      - name: "[09] Granger causality"
-        run: python3 "scripts/09 granger causality.py"
+      - name: Granger causality
+        run: python3 "quant/09 granger causality.py"
 
-      - name: "[10] VAR model + IRF"
-        run: python3 "scripts/10 var irf.py"
+      - name: VAR model and IRF
+        run: python3 "quant/10 var irf.py"
 
-      - name: "[11] SHAP feature importance"
-        run: python3 "scripts/11 shap analysis.py"
+      - name: SHAP feature importance
+        run: python3 "quant/11 shap analysis.py"
 
-      - name: "[12] Build full PRCSI index"
-        run: python3 "scripts/12 build full index.py"
+      - name: Build full PRCSI index
+        run: python3 "quant/12 build full index.py"
 
       - name: Upload econometric results
         uses: actions/upload-artifact@v4
@@ -66,3 +73,14 @@ jobs:
           git add data/results/ || true
           git diff --staged --quiet || git commit -m "chore: econometric results $(date +%Y-%m-%d)"
           git push || true
+
+      - name: Report status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Econometric pipeline completed successfully"
+            cat data/results/pipeline_metadata.json 2>/dev/null || true
+          else
+            echo "❌ Econometric pipeline FAILED"
+            exit 1
+          fi
