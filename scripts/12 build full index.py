@@ -1,14 +1,13 @@
 """
 Script 12 — Build Full PRCSI Index (0–100)
-Combines ALL five components: quantitative (25%) + NLP sentiment (75%).
+Combines quantitative + NLP sentiment components.
 Runs only after qualitative pipeline has produced NLP scores.
 
-Component weights (from project scope v4.0):
-  1. Supply Sentiment Momentum    30%  — OPEC/IEA EMA crossover
-  2. Institutional Rhetoric       25%  — BERTopic per-topic signals
-  3. Surface vs. Implied Divergence 20% — LLM divergence score
+Component weights:
+  1. Supply Sentiment Momentum    34%  — OPEC/IEA EMA crossover
+  2. Institutional Rhetoric       28%  — BERTopic per-topic signals
+  3. Surface vs. Implied Divergence 23% — LLM divergence score
   4. Fundamentals Signal          15%  — EIA + COT composite
-  5. Congressional Trade Signal   10%  — STOCK Act net buy/sell
 
 Output: data/results/prcsi_final.parquet
         data/results/prcsi_final.csv
@@ -41,7 +40,6 @@ def classify_regime(score: float) -> str:
 
 
 def norm(series: pd.Series, invert: bool = False) -> pd.Series:
-    """Normalise to 0-1 using rolling percentile rank."""
     ranked = series.rank(pct=True).clip(0, 1)
     return (1 - ranked) if invert else ranked
 
@@ -52,25 +50,29 @@ def build_full_index():
         log.warning("master_with_nlp.parquet not found — falling back to quantitative only")
         master_path = FEATURES_DIR / "master_quant.parquet"
 
+    if not master_path.exists():
+        log.warning("No master dataset found — skipping full index build")
+        return
+
     master = pd.read_parquet(master_path)
     master.index = pd.to_datetime(master.index)
-    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaler  = MinMaxScaler(feature_range=(0, 1))
     has_nlp = any("sent_" in c or "oil_impact" in c for c in master.columns)
 
     components = {}
 
-    # ── Component 1: Supply Sentiment Momentum (30%) ──────────────────────
+    # ── Component 1: Supply Sentiment Momentum (34%) ──────────────────────
     c1_candidates = ["sent_ema_cross", "supply_disruption_ema",
                      "sent_roc_3d", "oil_impact_score"]
     c1_avail = [c for c in c1_candidates if c in master.columns]
     if c1_avail:
         c1_raw = master[c1_avail].fillna(0).mean(axis=1)
-        components["supply_momentum"] = norm(c1_raw, invert=True)  # invert: negative = fear
+        components["supply_momentum"] = norm(c1_raw, invert=True)
         log.info(f"  C1 Supply Momentum: {len(c1_avail)} sub-signals")
     else:
         components["supply_momentum"] = pd.Series(0.5, index=master.index)
 
-    # ── Component 2: Institutional Rhetoric Signal (25%) ──────────────────
+    # ── Component 2: Institutional Rhetoric Signal (28%) ──────────────────
     topic_cols = [c for c in master.columns
                   if c.startswith("topic_") and "ema_cross" not in c]
     if topic_cols:
@@ -83,7 +85,7 @@ def build_full_index():
     else:
         components["rhetoric"] = pd.Series(0.5, index=master.index)
 
-    # ── Component 3: Surface vs. Implied Divergence (20%) ─────────────────
+    # ── Component 3: Surface vs. Implied Divergence (23%) ─────────────────
     if "surface_vs_implied_divergence" in master.columns:
         components["divergence"] = norm(
             master["surface_vs_implied_divergence"].fillna(0)
@@ -110,32 +112,21 @@ def build_full_index():
     else:
         components["fundamentals"] = pd.Series(0.5, index=master.index)
 
-    # ── Component 5: Congressional Trade Signal (10%) ─────────────────────
-    if "congress_net_signal" in master.columns:
-        components["congress"] = norm(
-            master["congress_net_signal"].fillna(0), invert=True
-        )
-        log.info("  C5 Congress: STOCK Act net signal")
-    else:
-        components["congress"] = pd.Series(0.5, index=master.index)
-
     # ── Weighted composite ────────────────────────────────────────────────
-    # If NLP scores missing, redistribute NLP weights to fundamentals
     if has_nlp:
         weights = {
-            "supply_momentum": 0.30,
-            "rhetoric":        0.25,
-            "divergence":      0.20,
+            "supply_momentum": 0.34,
+            "rhetoric":        0.28,
+            "divergence":      0.23,
             "fundamentals":    0.15,
         }
     else:
-        log.warning("  NLP scores absent — redistributing weights to fundamentals")
+        log.warning("  NLP scores absent — using fundamentals only")
         weights = {
             "supply_momentum": 0.00,
             "rhetoric":        0.00,
             "divergence":      0.00,
-            "fundamentals":    0.70,
-            "congress":        0.30,
+            "fundamentals":    1.00,
         }
 
     comp_df   = pd.DataFrame(components).fillna(0.5)
@@ -148,18 +139,21 @@ def build_full_index():
     )
     prcsi_smooth = prcsi.rolling(5, min_periods=1).mean()
 
+    if len(prcsi_smooth.dropna()) == 0:
+        log.warning("  PRCSI score empty — insufficient data")
+        return
+
     # ── Result DataFrame ──────────────────────────────────────────────────
     result = pd.DataFrame({
-        "prcsi_raw":             prcsi,
-        "prcsi":                 prcsi_smooth,
-        "regime":                prcsi_smooth.apply(classify_regime),
-        "comp_supply_momentum":  comp_df["supply_momentum"],
-        "comp_rhetoric":         comp_df["rhetoric"],
-        "comp_divergence":       comp_df["divergence"],
-        "comp_fundamentals":     comp_df["fundamentals"],
-        "comp_congress":         comp_df["congress"],
-        "oil_price":             master["oil"]        if "oil"        in master.columns else np.nan,
-        "oil_logret":            master["oil_logret"] if "oil_logret" in master.columns else np.nan,
+        "prcsi_raw":            prcsi,
+        "prcsi":                prcsi_smooth,
+        "regime":               prcsi_smooth.apply(classify_regime),
+        "comp_supply_momentum": comp_df["supply_momentum"],
+        "comp_rhetoric":        comp_df["rhetoric"],
+        "comp_divergence":      comp_df["divergence"],
+        "comp_fundamentals":    comp_df["fundamentals"],
+        "oil_price":            master["oil"]        if "oil"        in master.columns else np.nan,
+        "oil_logret":           master["oil_logret"] if "oil_logret" in master.columns else np.nan,
     })
 
     result.to_parquet(RESULTS_DIR / "prcsi_final.parquet")
@@ -185,7 +179,8 @@ def build_full_index():
     ax1.set_title(
         f"Oil Fear & Greed Index (PRCSI) — "
         f"{'Full NLP+Quant' if has_nlp else 'Quantitative Only'}\n"
-        f"Latest: {result['prcsi'].iloc[-1]:.1f} ({result['regime'].iloc[-1]})",
+        f"Latest: {result['prcsi'].dropna().iloc[-1]:.1f} "
+        f"({result['regime'].dropna().iloc[-1]})",
         fontsize=13, fontweight="bold"
     )
     ax1.grid(alpha=0.2)
@@ -202,7 +197,7 @@ def build_full_index():
     plt.close()
 
     # ── Update metadata ───────────────────────────────────────────────────
-    latest = float(result["prcsi"].iloc[-1])
+    latest    = float(result["prcsi"].dropna().iloc[-1])
     meta_path = RESULTS_DIR / "pipeline_metadata.json"
     metadata  = {}
     if meta_path.exists():
@@ -210,17 +205,17 @@ def build_full_index():
             metadata = json.load(f)
 
     metadata.update({
-        "prcsi_latest":            round(latest, 2),
-        "prcsi_regime":            result["regime"].iloc[-1],
-        "full_index_complete":     True,
-        "nlp_scores_used":         has_nlp,
-        "full_run_timestamp":      datetime.now().isoformat(),
+        "prcsi_latest":        round(latest, 2),
+        "prcsi_regime":        result["regime"].dropna().iloc[-1],
+        "full_index_complete": True,
+        "nlp_scores_used":     has_nlp,
+        "full_run_timestamp":  datetime.now().isoformat(),
     })
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
     log.info(f"\n✓ Full PRCSI index built")
-    log.info(f"  Latest score: {latest:.1f} ({result['regime'].iloc[-1]})")
+    log.info(f"  Latest score: {latest:.1f} ({result['regime'].dropna().iloc[-1]})")
     log.info(f"  NLP scores:   {'✅ included' if has_nlp else '⚠️  not included'}")
     return result
 
