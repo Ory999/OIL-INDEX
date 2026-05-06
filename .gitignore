@@ -10,7 +10,17 @@ data/raw/iea_texts/
 data/raw/energy_sec/
 
 # Raw data parquet files (large, regenerated daily)
+# Exceptions: NLP corpus outputs must be committed for resume logic
 data/raw/*.parquet
+!data/raw/llm_scores.parquet
+!data/raw/finbert_scores.parquet
+!data/raw/combined_corpus.parquet
+!data/raw/corpus_with_topics.parquet
+!data/raw/opec_corpus.parquet
+!data/raw/iea_corpus.parquet
+!data/raw/aramco_corpus.parquet
+!data/raw/eia_steo_corpus.parquet
+!data/raw/energy_sec_corpus.parquet
 
 # Feature parquet files — ignore large intermediates but keep master datasets
 data/features/*.parquet
