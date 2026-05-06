@@ -15,13 +15,12 @@ jobs:
     timeout-minutes: 60
 
     env:
-      ANTHROPIC_API_KEY: ${{ secrets.APIKEY }}
-      START_DATE:        "2007-01-01"
-      DATA_DIR:          data/raw
-      FEATURES_DIR:      data/features
-      RESULTS_DIR:       data/results
-      LLM_BASE_URL:      ${{ secrets.LLM_BASE_URL }}
-      LLM_MODEL:         "openai/gpt-oss-20b"
+      START_DATE:   "2007-01-01"
+      DATA_DIR:     data/raw
+      FEATURES_DIR: data/features
+      RESULTS_DIR:  data/results
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      LLM_MODEL:    "openai/gpt-oss-20b"
 
     steps:
       - name: Checkout repository
@@ -41,41 +40,40 @@ jobs:
           mkdir -p data/raw/aramco_texts data/raw/eia_steo data/raw/energy_sec
 
       - name: Collect OPEC Monthly Reports
-        run: python3 "qual/13 collect opec.py"
+        run: python3 "scripts/qual/13 collect opec.py"
 
       - name: Collect IEA Press Releases
-        run: python3 "qual/14 collect iea.py"
+        run: python3 "scripts/qual/14 collect iea.py"
 
       - name: Collect Saudi Aramco Press Releases
-        run: python3 "qual/15 collect aramco.py"
+        run: python3 "scripts/qual/15 collect aramco.py"
 
       - name: Collect EIA STEO Narratives
-        run: python3 "qual/16 collect eia steo.py"
+        run: python3 "scripts/qual/16 collect eia steo.py"
 
       - name: Collect US Energy Secretary Speeches
-        run: python3 "qual/17 collect energy sec.py"
+        run: python3 "scripts/qual/17 collect energy sec.py"
 
       - name: Build combined corpus
-        run: python3 "qual/18 build corpus.py"
+        run: python3 "scripts/qual/18 build corpus.py"
 
       - name: FinBERT baseline scoring
-        run: python3 "qual/19 finbert scoring.py"
+        run: python3 "scripts/qual/19 finbert scoring.py"
 
       - name: LLM multidimensional scoring
-        run: python3 "qual/20 llm scoring.py"
+        run: python3 "scripts/qual/20 llm scoring.py"
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.APIKEY }}
-          LLM_BASE_URL:      ${{ secrets.LLM_BASE_URL }}
-          LLM_MODEL:         "openai/gpt-oss-20b"
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL:    "openai/gpt-oss-20b"
 
       - name: BERTopic topic clustering
-        run: python3 "qual/21 bertopic clustering.py"
+        run: python3 "scripts/qual/21 bertopic clustering.py"
 
       - name: Sentiment momentum features
-        run: python3 "qual/22 sentiment momentum.py"
+        run: python3 "scripts/qual/22 sentiment momentum.py"
 
       - name: Merge NLP scores into master dataset
-        run: python3 "qual/23 merge nlp master.py"
+        run: python3 "scripts/qual/23 merge nlp master.py"
 
       - name: Upload NLP artefacts
         uses: actions/upload-artifact@v4
