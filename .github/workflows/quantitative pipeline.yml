@@ -31,7 +31,9 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
-          pip3 install -r requirements.txt
+          pip3 install yfinance pandas numpy requests fredapi \
+                       statsmodels scikit-learn shap scipy \
+                       pyarrow python-dotenv tqdm matplotlib seaborn
 
       - name: Create data directories
         run: mkdir -p data/raw data/features data/results
