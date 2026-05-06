@@ -63,7 +63,8 @@ def fetch_cot_data():
             latest_year = existing.index.max().year
             # Always re-fetch current year (it updates weekly)
             existing_years = set(range(START_YEAR, latest_year))
-            log.info(f"  Found cached COT data through {latest_year - 1}")
+            if len(df) > 0 and "cot_net_long" in df.columns:
+                log.info(f"  Latest net long: {df['cot_net_long'].iloc[-1]:,.0f} contracts")
         except Exception:
             existing = None
     else:
