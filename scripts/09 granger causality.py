@@ -102,9 +102,6 @@ def run_granger_causality():
         "COT Positioning": [c for c in master.columns
                              if "cot_" in c],
 
-        "Congressional Trades": [c for c in master.columns
-                                  if "congress_" in c],
-
         "Macro Controls": [c for c in master.columns if any(
             x in c for x in ["fed_funds","tips_","breakeven","umich",
                               "usd_logret","vix_logret"])],
@@ -125,6 +122,12 @@ def run_granger_causality():
             log.info(f"  Best: {sig.iloc[0]['feature']} (p={sig.iloc[0]['p_value']:.4f}, lag={sig.iloc[0]['best_lag']}d)")
 
     # ── Consolidate ────────────────────────────────────────────────────────
+    if not all_results:
+     log.warning("No features available for Granger testing — saving empty results")
+     pd.DataFrame().to_csv(RESULTS_DIR / "granger_all_results.csv", index=False)
+     pd.DataFrame().to_csv(RESULTS_DIR / "granger_significant.csv", index=False)
+     return pd.DataFrame()
+
     combined = pd.concat(all_results.values(), ignore_index=True)
     for group, res in all_results.items():
         combined.loc[combined["feature"].isin(res["feature"]), "group"] = group
