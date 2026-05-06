@@ -1,10 +1,10 @@
 {
-  "run_timestamp": "2026-05-06T12:45:26.393292",
+  "run_timestamp": "2026-05-06T14:49:29.795047",
   "n_trading_days": 5043,
-  "n_features": 27,
+  "n_features": 28,
   "date_range_start": "2007-01-03",
   "date_range_end": "2026-05-05",
-  "pct_missing": 8.83,
+  "pct_missing": 8.52,
   "columns": [
     "oil",
     "vix",
@@ -22,6 +22,7 @@
     "crude_stocks_change",
     "eia_surprise",
     "fed_funds_rate",
+    "tips_10yr",
     "breakeven_10yr",
     "usd_broad",
     "umich_sentiment",
@@ -39,6 +40,6 @@
   "prcsi_quant_latest": 51.72,
   "prcsi_quant_regime": "NEUTRAL",
   "quant_pipeline_complete": true,
-  "quant_run_timestamp": "2026-05-06T12:45:27.482637",
+  "quant_run_timestamp": "2026-05-06T14:49:31.338001",
   "nlp_scores_merged": false
 }
