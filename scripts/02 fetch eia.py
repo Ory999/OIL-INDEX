@@ -112,6 +112,11 @@ def fetch_eia_fundamentals():
     # Resample to business day frequency, forward fill (weekly → daily)
     df = df.resample("B").ffill(limit=5)
 
+    if len(df) == 0:
+        log.warning("  EIA data empty after resampling — check API response")
+        pd.DataFrame().to_parquet(out)
+        return pd.DataFrame()
+
     df.to_parquet(out)
     log.info(f"✓ EIA fundamentals saved → {out}  ({len(df)} rows)")
     log.info(f"  Latest crude stocks: {df['crude_stocks_mbbl'].iloc[-1]:.1f} Mbbl")
