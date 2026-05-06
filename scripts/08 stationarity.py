@@ -38,6 +38,11 @@ def run_stationarity_tests():
         master_path = FEATURES_DIR / "master_quant.parquet"
         log.warning("NLP master not found — using quantitative master")
 
+    if not master_path.exists():
+        log.warning("No master dataset found — skipping stationarity tests")
+        pd.DataFrame().to_csv(RESULTS_DIR / "adf_results.csv", index=False)
+        return pd.DataFrame()
+
     master = pd.read_parquet(master_path)
     master.index = pd.to_datetime(master.index)
 
@@ -49,6 +54,11 @@ def run_stationarity_tests():
         r = run_adf(master[col])
         r["variable"] = col
         results.append(r)
+
+    if not results:
+        log.warning("No columns had sufficient data for ADF tests")
+        pd.DataFrame().to_csv(RESULTS_DIR / "adf_results.csv", index=False)
+        return pd.DataFrame()
 
     df = pd.DataFrame(results).sort_values("p_value")
     df.to_csv(RESULTS_DIR / "adf_results.csv", index=False)
