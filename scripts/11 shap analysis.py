@@ -1,7 +1,7 @@
 """
 Script 11 — SHAP Feature Importance
 Trains gradient boosting on full combined feature set.
-Shows which components (NLP vs fundamentals vs congressional trades)
+Shows which components (NLP vs fundamentals)
 contribute most to predicting WTI oil returns.
 """
 import os, logging
@@ -30,6 +30,10 @@ def run_shap_analysis():
     if not master_path.exists():
         master_path = FEATURES_DIR / "master_quant.parquet"
         log.warning("NLP master not found — SHAP on quantitative features only")
+
+    if not master_path.exists():
+        log.warning("No master dataset found — skipping SHAP analysis")
+        return
 
     master = pd.read_parquet(master_path)
     master.index = pd.to_datetime(master.index)
