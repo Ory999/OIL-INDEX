@@ -1,7 +1,7 @@
 """
 Script 20 — LLM Multidimensional Scoring
 Model: Locally hosted open-source model via OpenAI-compatible API
-       (ngrok tunnel to AI Lab GPU, or Anthropic API fallback)
+       (ngrok tunnel to AI Lab GPU)
 
 Outputs: data/raw/llm_scores.parquet
 
@@ -16,51 +16,44 @@ Theoretical link:
   - demand_outlook_signal:         Demand-side outlook (Kilian 2009 demand shock proxy)
   - geopolitical_risk_signal:      Conflict/sanctions risk premium
   - surface_vs_implied_divergence: Information Asymmetry operationalisation (Akerlof 1970)
-                                   — gap between stated language and implied reality
   - institutional_confidence:      How certain/committed the institution sounds
 """
 import os, json, logging, time, re
 from pathlib import Path
 import pandas as pd
 import numpy as np
-from openai import OpenAI
 import httpx
+from openai import OpenAI
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s — %(message)s")
 log = logging.getLogger(__name__)
 
-RAW_DIR    = Path(os.getenv("DATA_DIR",  "data/raw"))
+RAW_DIR = Path(os.getenv("DATA_DIR", "data/raw"))
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Model configuration ───────────────────────────────────────────────────
-# Primary: locally hosted model via ngrok tunnel (AI Lab GPU)
-# Fallback: Anthropic API
-LLM_BASE_URL  = os.getenv("LLM_BASE_URL",  "http://localhost:11434/v1")
-LLM_MODEL     = os.getenv("LLM_MODEL",     "gpt2oss")
-ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-LLM_CONF_THRESHOLD = 0.75  # fallback to FinBERT below this confidence
+LLM_BASE_URL       = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
+LLM_MODEL          = os.getenv("LLM_MODEL",    "openai/gpt-oss-20b")
+LLM_CONF_THRESHOLD = 0.75
 
-# Source context for prompt calibration
 SOURCE_CONTEXT = {
-    "OPEC_MOMR":         "OPEC Monthly Oil Market Report — official production cartel assessment",
-    "IEA_OMR":           "IEA Oil Market Report — International Energy Agency demand-side assessment",
-    "ARAMCO":            "Saudi Aramco official press release — world's largest oil producer",
-    "EIA_STEO":          "EIA Short-Term Energy Outlook — US government official oil market forecast",
-    "ENERGY_SECRETARY":  "US Energy Secretary official speech — direct US government energy policy signal",
+    "OPEC_MOMR":        "OPEC Monthly Oil Market Report — official production cartel assessment",
+    "IEA_OMR":          "IEA Oil Market Report — International Energy Agency demand-side assessment",
+    "ARAMCO":           "Saudi Aramco official press release — world's largest oil producer",
+    "EIA_STEO":         "EIA Short-Term Energy Outlook — US government official oil market forecast",
+    "ENERGY_SECRETARY": "US Energy Secretary official speech — direct US government energy policy signal",
 }
 
-
-# ── Professional system prompt ────────────────────────────────────────────
 SYSTEM_PROMPT = """You are a quantitative analyst specialising in WTI crude oil commodity markets with 20 years of experience at a major energy trading desk.
 
 Your task is to analyse official institutional communications and extract structured sentiment signals that quantify their directional impact on WTI crude oil prices.
 
 SCORING FRAMEWORK — ALL SCORES ARE ON A STRICT -1.0 TO +1.0 SCALE:
-• -1.0 = Maximum bearish signal (extreme downward pressure on oil prices)
-• -0.5 = Moderately bearish
-•  0.0 = Neutral / no directional signal
-• +0.5 = Moderately bullish
-• +1.0 = Maximum bullish signal (extreme upward pressure on oil prices)
+- -1.0 = Maximum bearish signal (extreme downward pressure on oil prices)
+- -0.5 = Moderately bearish
+-  0.0 = Neutral / no directional signal
+- +0.5 = Moderately bullish
+- +1.0 = Maximum bullish signal (extreme upward pressure on oil prices)
 
 SCORE DEFINITIONS:
 1. oil_impact_score (-1 to +1):
@@ -109,7 +102,6 @@ CRITICAL RULES:
 def build_user_prompt(text: str, source: str, date: str) -> str:
     source_context = SOURCE_CONTEXT.get(source, f"Official institutional statement — {source}")
     text_excerpt   = text[:2000].strip()
-
     return f"""DOCUMENT ANALYSIS REQUEST
 
 Source type: {source_context}
@@ -141,29 +133,32 @@ Return ONLY this JSON object with no other text:
 
 def get_llm_client():
     """
-    Try local model first (AI Lab via ngrok), fall back to Anthropic API.
+    Connect to locally hosted model via ngrok tunnel.
+    Falls back to FinBERT if unavailable.
     Returns (client, model_name, is_local).
     """
-    # Try local first
     try:
-        client = OpenAI(base_url=LLM_BASE_URL, api_key="none")
+        client = OpenAI(
+            base_url=LLM_BASE_URL,
+            api_key="none",
+            http_client=httpx.Client(
+                headers={"ngrok-skip-browser-warning": "true"},
+                timeout=30.0,
+            )
+        )
         models = client.models.list()
         model  = models.data[0].id if models.data else LLM_MODEL
-        log.info(f"✓ Using local model: {model} at {LLM_BASE_URL}")
+        log.info(f"✓ Connected to local model: {model} at {LLM_BASE_URL}")
         return client, model, True
     except Exception as e:
-        log.warning(f"  Local model unavailable ({e}) — trying Anthropic API")
-
-    # No Anthropic fallback configured
-       log.info("  No Anthropic API key — will use FinBERT fallback")
-
-    log.warning("  No LLM available — will use FinBERT fallback for all documents")
-    return None, None, False
+        log.warning(f"  Local model unavailable: {e}")
+        log.info("  No Anthropic fallback — all documents will use FinBERT scores")
+        return None, None, False
 
 
 def score_document_openai(client, model: str, text: str,
                            source: str, date: str) -> dict | None:
-    """Score via OpenAI-compatible API (local model or compatible service)."""
+    """Score via OpenAI-compatible API."""
     try:
         response = client.chat.completions.create(
             model=model,
@@ -179,27 +174,7 @@ def score_document_openai(client, model: str, text: str,
             raw = re.sub(r'```json?|```', '', raw).strip()
         return json.loads(raw)
     except Exception as e:
-        log.debug(f"  OpenAI-compatible scoring failed: {e}")
-        return None
-
-
-def score_document_anthropic(client, text: str,
-                              source: str, date: str) -> dict | None:
-    """Score via Anthropic API (fallback)."""
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=400,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user",
-                        "content": build_user_prompt(text, source, date)}],
-        )
-        raw = response.content[0].text.strip()
-        if "```" in raw:
-            raw = re.sub(r'```json?|```', '', raw).strip()
-        return json.loads(raw)
-    except Exception as e:
-        log.debug(f"  Anthropic scoring failed: {e}")
+        log.debug(f"  LLM scoring failed: {e}")
         return None
 
 
@@ -256,7 +231,7 @@ def run_llm_scoring():
     client, model, is_local = get_llm_client()
     records = []
 
-    log.info(f"Scoring {len(corpus)} documents with LLM...")
+    log.info(f"Scoring {len(corpus)} documents...")
 
     for idx, row in corpus.iterrows():
         text   = str(row.get("text_clean", ""))
@@ -266,17 +241,13 @@ def run_llm_scoring():
         scores = None
 
         if client is not None:
-            if is_local:
-                scores = score_document_openai(client, model, text, source, date)
-            else:
-                scores = score_document_anthropic(client, text, source, date)
+            scores = score_document_openai(client, model, text, source, date)
 
-            # Check confidence threshold — fall back to FinBERT if too low
             if scores is not None:
                 conf = scores.get("institutional_confidence", 1.0)
                 if conf < LLM_CONF_THRESHOLD:
                     log.debug(f"  Low confidence ({conf:.2f}) — blending with FinBERT")
-                    fb = finbert_fallback_scores(row)
+                    fb    = finbert_fallback_scores(row)
                     blend = 1.0 - conf
                     scores["oil_impact_score"] = (
                         scores["oil_impact_score"] * (1 - blend)
@@ -292,8 +263,7 @@ def run_llm_scoring():
         scores["doc_index"] = idx
         records.append(scores)
 
-        # Rate limiting
-        time.sleep(0.3 if is_local else 0.5)
+        time.sleep(0.3)
 
     result_df = pd.DataFrame(records).set_index("doc_index")
     final     = pd.concat([corpus.reset_index(drop=True),
@@ -302,7 +272,8 @@ def run_llm_scoring():
 
     llm_pct = result_df.get("llm_scored", pd.Series(False)).mean() * 100
     log.info(f"✓ LLM scores saved → {out}")
-    log.info(f"  LLM scored: {llm_pct:.1f}% | FinBERT fallback: {100 - llm_pct:.1f}%")
+    log.info(f"  LLM scored:      {llm_pct:.1f}%")
+    log.info(f"  FinBERT fallback: {100 - llm_pct:.1f}%")
     log.info(f"  Mean oil_impact_score by source:")
     for src, grp in final.groupby("source"):
         log.info(f"    {src:25s}: {grp['oil_impact_score'].mean():+.4f}")
