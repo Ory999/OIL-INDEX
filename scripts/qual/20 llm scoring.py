@@ -153,15 +153,8 @@ def get_llm_client():
     except Exception as e:
         log.warning(f"  Local model unavailable ({e}) — trying Anthropic API")
 
-    # Fall back to Anthropic
-    if ANTHROPIC_KEY:
-        try:
-            import anthropic as ant
-            client = ant.Anthropic(api_key=ANTHROPIC_KEY)
-            log.info("✓ Using Anthropic API fallback")
-            return client, "claude-sonnet-4-6", False
-        except Exception as e:
-            log.warning(f"  Anthropic API failed: {e}")
+    # No Anthropic fallback configured
+       log.info("  No Anthropic API key — will use FinBERT fallback")
 
     log.warning("  No LLM available — will use FinBERT fallback for all documents")
     return None, None, False
