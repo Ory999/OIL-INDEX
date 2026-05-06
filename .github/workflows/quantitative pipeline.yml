@@ -37,26 +37,26 @@ jobs:
         run: mkdir -p data/raw data/features data/results
 
       - name: Fetch market prices
-        run: python3 "scripts/01 fetch prices.py"
+        run: python3 "quant/01 fetch prices.py"
 
       - name: Fetch EIA fundamentals
-        run: python3 "scripts/02 fetch eia.py"
+        run: python3 "quant/02 fetch eia.py"
         env:
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
 
       - name: Fetch FRED macro controls
-        run: python3 "scripts/03 fetch fred.py"
+        run: python3 "quant/03 fetch fred.py"
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
 
       - name: Fetch COT positioning
-        run: python3 "scripts/04 fetch cot.py"
+        run: python3 "quant/04 fetch cot.py"
 
       - name: Assemble master dataset
-        run: python3 "scripts/06 assemble master.py"
+        run: python3 "quant/06 assemble master.py"
 
       - name: Build partial quantitative index
-        run: python3 "scripts/07 build quant index.py"
+        run: python3 "quant/07 build quant index.py"
 
       - name: Upload data artefacts
         uses: actions/upload-artifact@v4
@@ -68,6 +68,7 @@ jobs:
             data/results/*.csv
             data/results/*.json
           retention-days: 7
+          if-no-files-found: warn
 
       - name: Commit updated data files
         run: |
