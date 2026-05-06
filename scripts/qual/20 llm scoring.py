@@ -2,12 +2,8 @@
 Script 20 — LLM Multidimensional Scoring
 Model: Locally hosted openai/gpt-oss-20b via ngrok tunnel
 
-All documents scored by LLM only. If a document fails after retries
-it receives neutral scores (0.0) rather than FinBERT substitution.
-FinBERT scores remain available as a separate baseline column for
-academic comparison but do NOT replace LLM scores.
-
-All scores on strict -1.0 to +1.0 scale.
+Resumable — if interrupted, re-running skips already scored documents.
+Incremental saves every 50 documents — max 50 documents lost on crash.
 """
 import os, json, logging, time, re
 from pathlib import Path
@@ -26,7 +22,8 @@ LLM_BASE_URL       = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
 LLM_MODEL          = os.getenv("LLM_MODEL",    "openai/gpt-oss-20b")
 LLM_CONF_THRESHOLD = 0.75
 MAX_RETRIES        = 3
-RETRY_DELAY        = 5.0   # seconds between retries
+RETRY_DELAY        = 5.0
+SAVE_EVERY         = 50   # incremental save frequency
 
 SOURCE_CONTEXT = {
     "OPEC_MOMR":        "OPEC Monthly Oil Market Report — official production cartel assessment",
@@ -124,11 +121,6 @@ Return ONLY this JSON object with no other text:
 
 
 def neutral_scores(reason: str = "LLM failed after retries") -> dict:
-    """
-    Return neutral 0.0 scores when LLM fails after all retries.
-    These are clearly marked as failed so they can be filtered
-    or imputed in downstream analysis.
-    """
     return {
         "oil_impact_score":              0.0,
         "supply_disruption_signal":      0.0,
@@ -144,7 +136,6 @@ def neutral_scores(reason: str = "LLM failed after retries") -> dict:
 
 
 def get_llm_client():
-    """Connect to locally hosted model via ngrok tunnel."""
     try:
         client = OpenAI(
             base_url=LLM_BASE_URL,
@@ -164,14 +155,7 @@ def get_llm_client():
 
 def score_document_with_retry(client, model: str, text: str,
                                source: str, date: str) -> dict:
-    """
-    Score a document with retry logic.
-    Tries MAX_RETRIES times before returning neutral scores.
-    Never falls back to FinBERT — neutral 0.0 is preferable to
-    a misrepresented classification score.
-    """
     last_error = ""
-
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             response = client.chat.completions.create(
@@ -184,50 +168,50 @@ def score_document_with_retry(client, model: str, text: str,
                 max_tokens=400,
             )
             raw = response.choices[0].message.content.strip()
-
-            # Strip markdown if model wraps response
             if "```" in raw:
                 raw = re.sub(r'```json?|```', '', raw).strip()
-
             scores = json.loads(raw)
             scores["llm_scored"] = True
             scores["llm_failed"] = False
             return scores
-
         except json.JSONDecodeError as e:
             last_error = f"JSON parse error: {e}"
             log.debug(f"  Attempt {attempt}/{MAX_RETRIES} — {last_error}")
-            # Give model a moment then retry
             time.sleep(RETRY_DELAY)
-
         except Exception as e:
             last_error = str(e)
-            log.debug(f"  Attempt {attempt}/{MAX_RETRIES} — LLM call failed: {e}")
+            log.debug(f"  Attempt {attempt}/{MAX_RETRIES} — {e}")
             time.sleep(RETRY_DELAY)
 
-    log.warning(f"  All {MAX_RETRIES} attempts failed — using neutral scores ({last_error[:60]})")
+    log.warning(f"  All {MAX_RETRIES} attempts failed — neutral scores ({last_error[:60]})")
     return neutral_scores(f"Failed after {MAX_RETRIES} retries: {last_error[:80]}")
 
 
 def validate_and_clip_scores(scores: dict) -> dict:
-    """Ensure all scores are within valid ranges."""
-    clip_fields = [
-        "oil_impact_score", "supply_disruption_signal",
-        "demand_outlook_signal", "geopolitical_risk_signal",
-    ]
-    for field in clip_fields:
+    for field in ["oil_impact_score", "supply_disruption_signal",
+                  "demand_outlook_signal", "geopolitical_risk_signal"]:
         if field in scores:
             scores[field] = float(np.clip(scores[field], -1.0, 1.0))
-
     if "surface_vs_implied_divergence" in scores:
         scores["surface_vs_implied_divergence"] = float(
-            np.clip(scores["surface_vs_implied_divergence"], 0.0, 1.0)
-        )
+            np.clip(scores["surface_vs_implied_divergence"], 0.0, 1.0))
     if "institutional_confidence" in scores:
         scores["institutional_confidence"] = float(
-            np.clip(scores["institutional_confidence"], 0.0, 1.0)
-        )
+            np.clip(scores["institutional_confidence"], 0.0, 1.0))
     return scores
+
+
+def save_incremental(records: list, out: Path, already_scored_df: pd.DataFrame | None):
+    """Save new records merged with any existing scores."""
+    if not records:
+        return
+    new_df = pd.DataFrame(records).set_index("doc_index")
+    if already_scored_df is not None and len(already_scored_df) > 0:
+        combined = pd.concat([already_scored_df, new_df])
+        combined = combined[~combined.index.duplicated(keep="last")]
+        combined.to_parquet(out)
+    else:
+        new_df.to_parquet(out)
 
 
 def run_llm_scoring():
@@ -243,60 +227,83 @@ def run_llm_scoring():
         log.warning("FinBERT corpus empty — skipping LLM scoring")
         return pd.DataFrame()
 
-    # Connect to LLM — raise immediately if unavailable
-    # (no silent fallback to FinBERT)
+    # ── Resume from existing scores ───────────────────────────────────────
+    already_scored_df  = None
+    already_scored_idx = set()
+    if out.exists():
+        try:
+            already_scored_df  = pd.read_parquet(out)
+            already_scored_idx = set(already_scored_df.index.tolist())
+            log.info(f"✓ Resuming — {len(already_scored_idx)} / {len(corpus)} already scored")
+        except Exception:
+            log.info("  No valid existing scores — starting fresh")
+
+    remaining = len(corpus) - len(already_scored_idx)
+    if remaining == 0:
+        log.info("✓ All documents already scored — nothing to do")
+        return pd.read_parquet(out)
+
+    log.info(f"  Documents to score: {remaining}")
+
+    # ── Connect to LLM ────────────────────────────────────────────────────
     try:
         client, model = get_llm_client()
     except ConnectionError as e:
         log.error(f"❌ {e}")
-        log.error("  LLM is required — cannot proceed without local model")
-        log.error("  Ensure ngrok tunnel is active and LLM_BASE_URL secret is current")
+        log.error("  Ensure ngrok is active and LLM_BASE_URL secret is current")
         raise
 
-    records     = []
-    failed      = 0
-    total       = len(corpus)
+    records = []
+    failed  = 0
+    total   = len(corpus)
 
-    log.info(f"Scoring {total} documents with {model}...")
-    log.info(f"  Max retries per document: {MAX_RETRIES}")
-    log.info(f"  Neutral scores assigned on failure (no FinBERT substitution)")
+    log.info(f"Scoring {remaining} documents with {model}...")
 
     for idx, row in corpus.iterrows():
+        if idx in already_scored_idx:
+            continue
+
         text   = str(row.get("text_clean", ""))
         source = str(row.get("source", "UNKNOWN"))
         date   = str(row["date"].date() if hasattr(row["date"], "date") else row["date"])
 
         scores = score_document_with_retry(client, model, text, source, date)
-
         if scores.get("llm_failed"):
             failed += 1
 
         scores = validate_and_clip_scores(scores)
         scores["doc_index"] = idx
         records.append(scores)
-
-        # Polite rate limiting
         time.sleep(0.3)
 
-        # Progress log every 50 documents
-        if (idx + 1) % 50 == 0:
-            log.info(f"  Progress: {idx + 1}/{total} documents "
-                     f"({failed} failed so far)")
+        # ── Incremental save every SAVE_EVERY documents ───────────────────
+        if len(records) % SAVE_EVERY == 0:
+            save_incremental(records, out, already_scored_df)
+            saved_total = len(already_scored_idx) + len(records)
+            log.info(f"  Progress: {saved_total}/{total} scored | "
+                     f"{failed} failed | incremental save ✓")
 
-    result_df = pd.DataFrame(records).set_index("doc_index")
-    final     = pd.concat([corpus.reset_index(drop=True),
-                            result_df.reset_index(drop=True)], axis=1)
-    final.to_parquet(out)
+    # ── Final save ────────────────────────────────────────────────────────
+    save_incremental(records, out, already_scored_df)
 
-    success_pct = (total - failed) / total * 100
+    # ── Load full result for reporting ────────────────────────────────────
+    final_scores = pd.read_parquet(out)
+    final        = pd.concat([
+        corpus.reset_index(drop=True),
+        final_scores.reset_index(drop=True)
+    ], axis=1)
+
+    total_scored  = len(already_scored_idx) + len(records)
+    success_pct   = (total_scored - failed) / total_scored * 100 if total_scored else 0
+
     log.info(f"\n✓ LLM scoring complete → {out}")
-    log.info(f"  Total documents:    {total}")
-    log.info(f"  LLM scored:         {total - failed} ({success_pct:.1f}%)")
-    log.info(f"  Neutral (failed):   {failed} ({100 - success_pct:.1f}%)")
+    log.info(f"  Total documents:   {total}")
+    log.info(f"  LLM scored:        {total_scored - failed} ({success_pct:.1f}%)")
+    log.info(f"  Neutral (failed):  {failed} ({100 - success_pct:.1f}%)")
     log.info(f"\n  Mean scores by source:")
     for src, grp in final.groupby("source"):
-        scored = grp[grp["llm_failed"] == False] if "llm_failed" in grp else grp
-        log.info(f"    {src:25s}: oil_impact={grp['oil_impact_score'].mean():+.4f}  "
+        log.info(f"    {src:25s}: "
+                 f"oil_impact={grp['oil_impact_score'].mean():+.4f}  "
                  f"divergence={grp['surface_vs_implied_divergence'].mean():.4f}")
 
     return final
