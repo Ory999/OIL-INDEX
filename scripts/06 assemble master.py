@@ -45,8 +45,11 @@ def assemble_master():
     fred    = load_parquet(RAW_DIR / "fred_macro.parquet",       "FRED")
     cot     = load_parquet(RAW_DIR / "cot_crude.parquet",        "COT")
 
-    if prices is None:
-        raise RuntimeError("prices.parquet not found — run 01_fetch_prices.py first")
+    if prices is None or len(prices) == 0:
+        raise RuntimeError("prices.parquet is empty or missing — check 01 fetch prices.py")
+
+    if "oil_logret" not in prices.columns:
+        raise RuntimeError("oil_logret column missing from prices — check 01 fetch prices.py")
 
     # ── Build master on business day spine (prices always available) ──────
     master = prices.copy()
@@ -124,7 +127,7 @@ def assemble_master():
         "pct_missing": round(pct_missing, 2),
         "columns": list(master.columns),
         "latest_oil_price":  round(float(master["oil"].iloc[-1]),  2) if "oil"  in master.columns else None,
-        "latest_oil_logret": round(float(master["oil_logret"].iloc[-1]), 5),
+        "latest_oil_logret": round(float(master["oil_logret"].dropna().iloc[-1]), 5) if len(master["oil_logret"].dropna()) > 0 else None,
     }
     summary_path = Path(os.getenv("RESULTS_DIR", "data/results"))
     summary_path.mkdir(parents=True, exist_ok=True)
