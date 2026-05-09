@@ -43,6 +43,7 @@ jobs:
                        pdfplumber feedparser \
                        transformers torch \
                        bertopic sentence-transformers \
+                       umap-learn hdbscan \
                        openai httpx \
                        scikit-learn tqdm \
                        python-dotenv
