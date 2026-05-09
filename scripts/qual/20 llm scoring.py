@@ -22,7 +22,6 @@ RAW_DIR.mkdir(parents=True, exist_ok=True)
 
 LLM_BASE_URL       = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
 LLM_MODEL          = os.getenv("LLM_MODEL",    "openai/gpt-oss-20b")
-LLM_CONF_THRESHOLD = 0.75
 MAX_RETRIES        = 3
 RETRY_DELAY        = 5.0
 SAVE_EVERY         = 50
@@ -31,7 +30,6 @@ SOURCE_CONTEXT = {
     "OPEC_MOMR":        "OPEC Monthly Oil Market Report — official production cartel assessment",
     "ARAMCO":           "Saudi Aramco official press release — world's largest oil producer",
     "EIA_STEO":         "EIA Short-Term Energy Outlook — US government official oil market forecast",
-    "ENERGY_SECRETARY": "US Energy Secretary official speech — direct US government energy policy signal",
 }
 # JSON schema, mirrors the LM Studio preset (Semesterprojekt)
 # Enforces score ranges and valid dominant_theme values at token level
