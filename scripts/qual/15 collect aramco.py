@@ -1,121 +1,153 @@
 """
-Script 15 — Collect Saudi Aramco Press Releases
-Source: aramco.com/en/news-media/news — free, public
+Script 15 — Collect Saudi Aramco News via Google News RSS
+Source: Google News RSS — free, public, no authentication required
 Outputs: data/raw/aramco_corpus.parquet
 
 Saudi Aramco is the world's largest oil producer. Their statements
 on production, pricing, and market outlook often signal OPEC decisions
 before official announcement — highest single-company market impact.
+
+Collection method: Google News RSS (not aramco.com direct scraping)
+aramco.com blocks automated requests. Google News RSS provides
+oil-relevant press coverage without authentication or rate limiting.
+
+Historic backfill strategy:
+  2020–2026 articles pre-collected locally and stored in data/Historic/
+  This script loads historic corpus first, then fetches only new articles
+  not already present — avoiding redundant RSS requests on every run.
 """
-import os, logging, time, re, requests
+import os, logging, time, re
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
-from bs4 import BeautifulSoup
+import feedparser
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s — %(message)s")
 log = logging.getLogger(__name__)
 
-RAW_DIR = Path(os.getenv("DATA_DIR", "data/raw"))
+RAW_DIR      = Path(os.getenv("DATA_DIR",     "data/raw"))
+HISTORIC_DIR = Path(os.getenv("HISTORIC_DIR", "data/Historic"))
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (academic research project; oil market analysis)"}
-
-OIL_KEYWORDS = [
-    "oil", "crude", "production", "barrel", "opec", "output", "supply",
-    "demand", "price", "market", "energy", "upstream", "downstream",
-    "refinery", "export", "capacity", "reserves"
+RSS_URLS = [
+    "https://news.google.com/rss/search?q=Saudi+Aramco+oil+production+OPEC&hl=en&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=Aramco+crude+oil+market&hl=en&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=Saudi+Arabia+oil+production+barrel&hl=en&gl=US&ceid=US:en",
 ]
 
 
-def fetch_aramco_news(max_pages: int = 10) -> list:
-    records = []
-    base = "https://www.aramco.com"
+def load_historic_corpus() -> pd.DataFrame | None:
+    """
+    Load pre-collected Aramco articles from data/Historic/aramco_corpus.parquet.
+    Covers 2020–2026 (240 articles) collected during local backfill via Google News RSS.
+    """
+    historic_path = HISTORIC_DIR / "aramco_corpus.parquet"
+    if not historic_path.exists():
+        log.info("  No historic Aramco corpus found — fetching all from RSS")
+        return None
+    try:
+        df = pd.read_parquet(historic_path)
+        df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
+        log.info(f"✓ Loaded {len(df)} historic Aramco articles from {historic_path}")
+        return df
+    except Exception as e:
+        log.warning(f"  Could not load historic Aramco corpus: {e}")
+        return None
 
-    for page in range(1, max_pages + 1):
+
+def fetch_rss_articles(historic_texts: set) -> list:
+    """
+    Fetch new Aramco articles from Google News RSS.
+    Skips articles whose text is already in the historic corpus.
+    """
+    new_records = []
+
+    for rss_url in RSS_URLS:
         try:
-            url = f"{base}/en/news-media/news?page={page}"
-            r   = requests.get(url, headers=HEADERS, timeout=15)
-            if r.status_code != 200:
-                break
-            soup = BeautifulSoup(r.content, "html.parser")
+            feed = feedparser.parse(rss_url)
+            log.info(f"  RSS feed: {len(feed.entries)} entries from {rss_url[:60]}...")
 
-            # Find article links
-            articles = soup.find_all("a", href=re.compile(r"/en/news-media/news/"))
-            if not articles:
-                break
+            for entry in feed.entries:
+                title   = entry.get("title", "")
+                summary = entry.get("summary", "") or entry.get("description", "")
 
-            for article in articles:
-                href  = base + article.get("href", "")
-                title = article.get_text(strip=True)
+                # Parse date
+                try:
+                    pub_date = pd.to_datetime(
+                        entry.get("published", "")
+                    ).tz_localize(None)
+                except Exception:
+                    pub_date = pd.Timestamp.now().floor("D")
 
-                # Only fetch oil-relevant articles
-                if not any(kw in title.lower() for kw in OIL_KEYWORDS):
+                # Clean text
+                text = re.sub(r'<[^>]+>', '', title + " " + summary)
+                text = re.sub(r'\s+', ' ', text).strip()
+
+                if len(text) < 100:
                     continue
 
-                try:
-                    ar = requests.get(href, headers=HEADERS, timeout=12)
-                    asoup = BeautifulSoup(ar.content, "html.parser")
+                # Skip if already in historic corpus (text-based dedup)
+                text_key = text[:200]
+                if text_key in historic_texts:
+                    continue
 
-                    # Parse date
-                    pub_date = pd.Timestamp.now().floor("D")
-                    for el in asoup.find_all(["time", "span"],
-                                              attrs={"datetime": True}):
-                        try:
-                            pub_date = pd.to_datetime(el["datetime"])
-                            break
-                        except Exception:
-                            pass
+                new_records.append({
+                    "date":       pub_date,
+                    "source":     "ARAMCO",
+                    "text":       text[:5000],
+                    "char_count": len(text),
+                })
 
-                    # Extract text
-                    content = (asoup.find("div", class_=re.compile("article|content|body")) or
-                               asoup.find("main"))
-                    if content:
-                        text = re.sub(r'\s+', ' ',
-                                      content.get_text(separator=" ", strip=True))
-                        if len(text) > 150:
-                            records.append({
-                                "date":       pub_date,
-                                "source":     "ARAMCO",
-                                "title":      title,
-                                "text":       text[:5000],
-                                "char_count": len(text),
-                                "url":        href,
-                            })
-
-                    time.sleep(0.3)
-
-                except Exception as e:
-                    log.debug(f"  Aramco article failed: {e}")
-
-            time.sleep(0.5)
+            time.sleep(1.0)
 
         except Exception as e:
-            log.debug(f"  Aramco page {page} failed: {e}")
-            break
+            log.warning(f"  RSS feed failed: {e}")
 
-    return records
+    return new_records
 
 
 def collect_aramco_corpus():
-    out     = RAW_DIR / "aramco_corpus.parquet"
-    records = fetch_aramco_news()
+    out = RAW_DIR / "aramco_corpus.parquet"
 
-    if not records:
-        log.warning("No Aramco press releases collected — creating placeholder")
+    # ── Load historic corpus ───────────────────────────────────────────────
+    historic_df   = load_historic_corpus()
+    historic_texts = set()
+    if historic_df is not None and len(historic_df) > 0:
+        historic_texts = set(
+            historic_df["text"].str[:200].tolist()
+        )
+        log.info(f"  Historic text keys: {len(historic_texts)}")
+
+    # ── Fetch new articles from RSS ────────────────────────────────────────
+    new_records = fetch_rss_articles(historic_texts)
+
+    if new_records:
+        log.info(f"  Fetched {len(new_records)} new Aramco articles from RSS")
+    else:
+        log.info("  No new Aramco articles found — all covered by historic data")
+
+    # ── Merge historic + new ───────────────────────────────────────────────
+    frames = []
+    if historic_df is not None and len(historic_df) > 0:
+        frames.append(historic_df)
+    if new_records:
+        frames.append(pd.DataFrame(new_records))
+
+    if not frames:
+        log.warning("No Aramco articles available — creating placeholder")
         pd.DataFrame([{
             "date": pd.Timestamp("2024-01-01"), "source": "ARAMCO",
-            "title": "placeholder", "text": "Aramco data placeholder",
-            "char_count": 20, "url": ""
+            "text": "Aramco placeholder", "char_count": 18,
         }]).to_parquet(out)
         return pd.DataFrame()
 
-    df = (pd.DataFrame(records)
-            .drop_duplicates("url")
-            .sort_values("date")
-            .reset_index(drop=True))
+    df = pd.concat(frames, ignore_index=True)
+    df = df.drop_duplicates(subset=["text"]).sort_values("date").reset_index(drop=True)
     df.to_parquet(out)
+
     log.info(f"✓ Aramco corpus: {len(df)} articles → {out}")
+    log.info(f"  Date range: {df['date'].min().date()} → {df['date'].max().date()}")
+    log.info(f"  From historic: {len(historic_texts)}  |  New from RSS: {len(new_records)}")
     return df
 
 
