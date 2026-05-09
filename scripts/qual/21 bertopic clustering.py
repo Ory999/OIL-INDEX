@@ -37,14 +37,10 @@ HISTORIC_DIR = Path(os.getenv("HISTORIC_DIR", "data/Historic"))
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Historic model and corpus paths
 HISTORIC_MODEL_PATH  = HISTORIC_DIR / "Bertopic"
 HISTORIC_TOPICS_PATH = HISTORIC_DIR / "corpus_with_topics.parquet"
+MODEL_PATH           = RESULTS_DIR / "bertopic_model"
 
-# Daily model path (copied from historic on first run, used for daily predictions)
-MODEL_PATH = RESULTS_DIR / "bertopic_model"
-
-# Verified topic labels — matched against topics.json from local backfill
 TOPIC_LABELS = {
     -1: "OUTLIER",
     0:  "OPEC_SUPPLY",       # production, million, oil
@@ -58,17 +54,11 @@ TOPIC_LABELS = {
     8:  "NOISE_SOCIAL",      # capitalist, venezuela, visual — filtered before momentum
 }
 
-# Noise topics excluded from sentiment momentum calculation
-NOISE_TOPICS = {"NOISE_EMAIL", "NOISE_SOCIAL"}
-
+NOISE_TOPICS     = {"NOISE_EMAIL", "NOISE_SOCIAL"}
 MIN_DOCS_FOR_FIT = 100
 
 
 def load_historic_topics() -> pd.DataFrame | None:
-    """
-    Load pre-assigned topic labels from data/Historic/corpus_with_topics.parquet.
-    Documents are matched by (date, source) to avoid index alignment issues.
-    """
     if not HISTORIC_TOPICS_PATH.exists():
         log.info("  No historic topic assignments found in data/Historic/")
         return None
@@ -83,10 +73,6 @@ def load_historic_topics() -> pd.DataFrame | None:
 
 
 def ensure_model_available() -> bool:
-    """
-    Copy the historic BERTopic model to data/results/bertopic_model/ if not present.
-    This is the model used for predicting topics on new daily documents.
-    """
     if MODEL_PATH.exists():
         return True
     if HISTORIC_MODEL_PATH.exists():
@@ -99,6 +85,28 @@ def ensure_model_available() -> bool:
             return False
     log.info("  No BERTopic model available — will fit on current corpus")
     return False
+
+
+def log_topic_info(topic_model) -> None:
+    """Log discovered topic keywords with assigned labels."""
+    topic_info = topic_model.get_topic_info()
+    log.info("\n  ── Discovered Topics (update TOPIC_LABELS if needed) ──")
+    for _, trow in topic_info.iterrows():
+        if trow["Topic"] != -1:
+            kws   = ", ".join([w for w, _ in topic_model.get_topic(trow["Topic"])[:8]])
+            label = TOPIC_LABELS.get(trow["Topic"], "UNLABELLED")
+            log.info(f"    Topic {trow['Topic']:2d} ({trow['Count']:3d} docs) → {label}: {kws}")
+
+
+def save_model(topic_model) -> None:
+    """Save BERTopic model to results directory."""
+    shutil.rmtree(str(MODEL_PATH), ignore_errors=True)
+    MODEL_PATH.mkdir(parents=True, exist_ok=True)
+    try:
+        topic_model.save(str(MODEL_PATH), serialization="safetensors", save_ctfidf=True)
+        log.info(f"  Model saved → {MODEL_PATH}")
+    except Exception as e:
+        log.warning(f"  Could not save model: {e}")
 
 
 def run_bertopic_clustering():
@@ -130,18 +138,16 @@ def run_bertopic_clustering():
         log.info(f"  Historic topic keys: {len(hist_lookup)} (date+source pairs)")
 
     # ── Identify new documents not in historic data ────────────────────────
-    new_docs_idx = []
-    for idx, row in corpus.iterrows():
-        key = (str(row["date"].date()), str(row.get("source", "")))
-        if key not in hist_lookup:
-            new_docs_idx.append(idx)
+    new_docs_idx = [
+        idx for idx, row in corpus.iterrows()
+        if (str(row["date"].date()), str(row.get("source", ""))) not in hist_lookup
+    ]
 
-    historic_hits = len(corpus) - len(new_docs_idx)
     log.info(f"\n  Corpus total:       {len(corpus)}")
-    log.info(f"  From historic data: {historic_hits}")
+    log.info(f"  From historic data: {len(corpus) - len(new_docs_idx)}")
     log.info(f"  New documents:      {len(new_docs_idx)}")
 
-    # ── Assign topics to new documents using the saved model ──────────────
+    # ── Assign topics to new documents ────────────────────────────────────
     new_topic_assignments = {}
     if new_docs_idx:
         model_available = ensure_model_available()
@@ -159,25 +165,26 @@ def run_bertopic_clustering():
                         str(MODEL_PATH),
                         embedding_model=embedding_model
                     )
+                    # FIX 1: use column access, not .get() on Series
                     new_texts = [
-                        str(corpus.loc[idx].get("text_clean", ""))
+                        str(corpus.loc[idx]["text_clean"])
+                        if "text_clean" in corpus.columns else ""
                         for idx in new_docs_idx
                     ]
                     new_topics, new_probs = topic_model.transform(new_texts)
                     for i, idx in enumerate(new_docs_idx):
-                        topic_id = new_topics[i]
+                        tid = new_topics[i]
                         new_topic_assignments[idx] = {
-                            "topic_id":    topic_id,
+                            "topic_id":    tid,
                             "topic_prob":  float(new_probs[i].max()
                                                  if hasattr(new_probs[i], "max")
                                                  else new_probs[i]),
-                            "topic_label": TOPIC_LABELS.get(topic_id, "OTHER"),
+                            "topic_label": TOPIC_LABELS.get(tid, "OTHER"),
                         }
                     log.info(f"✓ Topics predicted for {len(new_docs_idx)} new documents")
 
                 except Exception as e:
-                    log.warning(f"  Model load failed ({e}) — fitting new model")
-                    topic_model = None
+                    log.warning(f"  Model load failed ({e}) — refitting on full corpus")
 
                     if len(corpus) >= MIN_DOCS_FOR_FIT:
                         topic_model = BERTopic(
@@ -199,32 +206,12 @@ def run_bertopic_clustering():
                                                          else all_probs[i]),
                                     "topic_label": TOPIC_LABELS.get(tid, "OTHER"),
                                 }
-
-                        topic_info = topic_model.get_topic_info()
-                        log.info("\n  ── Discovered Topics (update TOPIC_LABELS if needed) ──")
-                        for _, row in topic_info.iterrows():
-                            if row["Topic"] != -1:
-                                kws = ", ".join(
-                                    [w for w, _ in topic_model.get_topic(row["Topic"])[:8]]
-                                )
-                                label = TOPIC_LABELS.get(row["Topic"], "UNLABELLED")
-                                log.info(f"    Topic {row['Topic']:2d} "
-                                         f"({row['Count']:3d} docs) → {label}: {kws}")
-
-                        shutil.rmtree(str(MODEL_PATH), ignore_errors=True)
-                        MODEL_PATH.mkdir(parents=True, exist_ok=True)
-                        try:
-                            topic_model.save(
-                                str(MODEL_PATH),
-                                serialization="safetensors",
-                                save_ctfidf=True
-                            )
-                            log.info(f"  New model saved → {MODEL_PATH}")
-                        except Exception as save_err:
-                            log.warning(f"  Could not save model: {save_err}")
+                        # FIX 2: use trow not row to avoid shadowing outer loop variable
+                        log_topic_info(topic_model)
+                        save_model(topic_model)
 
             else:
-                # No model and no historic — fit from scratch on full corpus
+                # No model and no historic — fit from scratch
                 if len(corpus) >= MIN_DOCS_FOR_FIT:
                     log.info(f"Fitting BERTopic on {len(corpus)} documents (first run)...")
                     topic_model = BERTopic(
@@ -245,28 +232,9 @@ def run_bertopic_clustering():
                                                  else all_probs[i]),
                             "topic_label": TOPIC_LABELS.get(tid, "OTHER"),
                         }
-
-                    topic_info = topic_model.get_topic_info()
-                    log.info("\n  ── Discovered Topics (update TOPIC_LABELS if needed) ──")
-                    for _, row in topic_info.iterrows():
-                        if row["Topic"] != -1:
-                            kws = ", ".join(
-                                [w for w, _ in topic_model.get_topic(row["Topic"])[:8]]
-                            )
-                            label = TOPIC_LABELS.get(row["Topic"], "UNLABELLED")
-                            log.info(f"    Topic {row['Topic']:2d} "
-                                     f"({row['Count']:3d} docs) → {label}: {kws}")
-
-                    MODEL_PATH.mkdir(parents=True, exist_ok=True)
-                    try:
-                        topic_model.save(
-                            str(MODEL_PATH),
-                            serialization="safetensors",
-                            save_ctfidf=True
-                        )
-                        log.info(f"  Model saved → {MODEL_PATH}")
-                    except Exception as save_err:
-                        log.warning(f"  Could not save model: {save_err}")
+                    # FIX 2: use trow not row to avoid shadowing outer loop variable
+                    log_topic_info(topic_model)
+                    save_model(topic_model)
                 else:
                     log.warning(
                         f"  Only {len(corpus)} documents — below minimum {MIN_DOCS_FOR_FIT}. "
