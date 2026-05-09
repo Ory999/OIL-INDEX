@@ -3,6 +3,7 @@ Script 20 — LLM Multidimensional Scoring
 Model: Locally hosted openai/gpt-oss-20b via ngrok tunnel
 
 Resumable — if interrupted, re-running skips already scored documents.
+Historical backfill loaded from data/Historic/ — only new documents scored.
 Incremental saves every 50 documents — max 50 documents lost on crash.
 """
 import os, json, logging, time, re
@@ -15,7 +16,8 @@ from openai import OpenAI
 logging.basicConfig(level=logging.INFO, format="%(asctime)s — %(message)s")
 log = logging.getLogger(__name__)
 
-RAW_DIR = Path(os.getenv("DATA_DIR", "data/raw"))
+RAW_DIR      = Path(os.getenv("DATA_DIR",     "data/raw"))
+HISTORIC_DIR = Path(os.getenv("HISTORIC_DIR", "data/Historic"))
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
 LLM_BASE_URL       = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
@@ -23,11 +25,10 @@ LLM_MODEL          = os.getenv("LLM_MODEL",    "openai/gpt-oss-20b")
 LLM_CONF_THRESHOLD = 0.75
 MAX_RETRIES        = 3
 RETRY_DELAY        = 5.0
-SAVE_EVERY         = 50   # incremental save frequency
+SAVE_EVERY         = 50
 
 SOURCE_CONTEXT = {
     "OPEC_MOMR":        "OPEC Monthly Oil Market Report — official production cartel assessment",
-    "IEA_OMR":          "IEA Oil Market Report — International Energy Agency demand-side assessment",
     "ARAMCO":           "Saudi Aramco official press release — world's largest oil producer",
     "EIA_STEO":         "EIA Short-Term Energy Outlook — US government official oil market forecast",
     "ENERGY_SECRETARY": "US Energy Secretary official speech — direct US government energy policy signal",
@@ -201,8 +202,27 @@ def validate_and_clip_scores(scores: dict) -> dict:
     return scores
 
 
+def load_historic_scores() -> pd.DataFrame | None:
+    """
+    Load pre-scored historical documents from data/Historic/llm_scores.parquet.
+    These were scored locally (2007-2026) and committed to avoid re-running the LLM.
+    Matching is done by (date, source) so index position does not matter.
+    """
+    historic_path = HISTORIC_DIR / "llm_scores.parquet"
+    if not historic_path.exists():
+        log.info("  No historic scores found — scoring all documents fresh")
+        return None
+    try:
+        df = pd.read_parquet(historic_path)
+        df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None).dt.normalize()
+        log.info(f"✓ Loaded {len(df)} historic scores from {historic_path}")
+        return df
+    except Exception as e:
+        log.warning(f"  Could not load historic scores: {e}")
+        return None
+
+
 def save_incremental(records: list, out: Path, already_scored_df: pd.DataFrame | None):
-    """Save new records merged with any existing scores."""
     if not records:
         return
     new_df = pd.DataFrame(records).set_index("doc_index")
@@ -227,23 +247,52 @@ def run_llm_scoring():
         log.warning("FinBERT corpus empty — skipping LLM scoring")
         return pd.DataFrame()
 
-    # ── Resume from existing scores ───────────────────────────────────────
+    corpus["date"] = pd.to_datetime(corpus["date"]).dt.tz_localize(None).dt.normalize()
+
+    # ── Load historic pre-scored documents (date+source matching) ─────────
+    historic_df = load_historic_scores()
+    historic_keys = set()
+    if historic_df is not None and len(historic_df) > 0:
+        historic_keys = set(
+            zip(historic_df["date"].dt.date.astype(str),
+                historic_df["source"])
+        )
+        log.info(f"  Historic keys available: {len(historic_keys)} (date+source pairs)")
+
+    # ── Resume from existing daily scores (index-based) ───────────────────
     already_scored_df  = None
     already_scored_idx = set()
     if out.exists():
         try:
             already_scored_df  = pd.read_parquet(out)
             already_scored_idx = set(already_scored_df.index.tolist())
-            log.info(f"✓ Resuming — {len(already_scored_idx)} / {len(corpus)} already scored")
+            log.info(f"  Daily resume: {len(already_scored_idx)} already scored today")
         except Exception:
-            log.info("  No valid existing scores — starting fresh")
+            log.info("  No valid daily scores — starting fresh")
 
-    remaining = len(corpus) - len(already_scored_idx)
-    if remaining == 0:
-        log.info("✓ All documents already scored — nothing to do")
+    # ── Determine which documents need LLM scoring ─────────────────────────
+    def needs_scoring(idx, row) -> bool:
+        if idx in already_scored_idx:
+            return False
+        doc_key = (str(row["date"].date()), str(row.get("source", "")))
+        if doc_key in historic_keys:
+            return False
+        return True
+
+    to_score = [(idx, row) for idx, row in corpus.iterrows()
+                if needs_scoring(idx, row)]
+
+    historic_hits = len(corpus) - len(already_scored_idx) - len(to_score)
+    log.info(f"\n  Corpus total:          {len(corpus)}")
+    log.info(f"  From historic data:    {historic_hits}")
+    log.info(f"  Already scored today:  {len(already_scored_idx)}")
+    log.info(f"  Need LLM scoring:      {len(to_score)}")
+
+    if len(to_score) == 0:
+        log.info("✓ All documents covered by historic or daily scores — nothing to do")
+        # Build and save the full merged output
+        _save_full_output(corpus, historic_df, already_scored_df, out)
         return pd.read_parquet(out)
-
-    log.info(f"  Documents to score: {remaining}")
 
     # ── Connect to LLM ────────────────────────────────────────────────────
     try:
@@ -255,14 +304,10 @@ def run_llm_scoring():
 
     records = []
     failed  = 0
-    total   = len(corpus)
 
-    log.info(f"Scoring {remaining} documents with {model}...")
+    log.info(f"Scoring {len(to_score)} new documents with {model}...")
 
-    for idx, row in corpus.iterrows():
-        if idx in already_scored_idx:
-            continue
-
+    for idx, row in to_score:
         text   = str(row.get("text_clean", ""))
         source = str(row.get("source", "UNKNOWN"))
         date   = str(row["date"].date() if hasattr(row["date"], "date") else row["date"])
@@ -276,37 +321,80 @@ def run_llm_scoring():
         records.append(scores)
         time.sleep(0.3)
 
-        # ── Incremental save every SAVE_EVERY documents ───────────────────
         if len(records) % SAVE_EVERY == 0:
             save_incremental(records, out, already_scored_df)
-            saved_total = len(already_scored_idx) + len(records)
-            log.info(f"  Progress: {saved_total}/{total} scored | "
+            log.info(f"  Progress: {len(records)}/{len(to_score)} new docs scored | "
                      f"{failed} failed | incremental save ✓")
 
-    # ── Final save ────────────────────────────────────────────────────────
     save_incremental(records, out, already_scored_df)
-
-    # ── Load full result for reporting ────────────────────────────────────
-    final_scores = pd.read_parquet(out)
-    final        = pd.concat([
-        corpus.reset_index(drop=True),
-        final_scores.reset_index(drop=True)
-    ], axis=1)
-
-    total_scored  = len(already_scored_idx) + len(records)
-    success_pct   = (total_scored - failed) / total_scored * 100 if total_scored else 0
+    _save_full_output(corpus, historic_df, already_scored_df, out)
 
     log.info(f"\n✓ LLM scoring complete → {out}")
-    log.info(f"  Total documents:   {total}")
-    log.info(f"  LLM scored:        {total_scored - failed} ({success_pct:.1f}%)")
-    log.info(f"  Neutral (failed):  {failed} ({100 - success_pct:.1f}%)")
-    log.info(f"\n  Mean scores by source:")
-    for src, grp in final.groupby("source"):
-        log.info(f"    {src:25s}: "
-                 f"oil_impact={grp['oil_impact_score'].mean():+.4f}  "
-                 f"divergence={grp['surface_vs_implied_divergence'].mean():.4f}")
+    log.info(f"  New docs scored:   {len(records)} ({len(records)-failed} success, {failed} failed)")
 
+    final = pd.read_parquet(out)
+    log.info(f"  Total in output:   {len(final)}")
+    log.info(f"\n  Mean scores by source:")
+    if "source" in final.columns:
+        for src, grp in final.groupby("source"):
+            log.info(f"    {src:25s}: "
+                     f"oil_impact={grp['oil_impact_score'].mean():+.4f}  "
+                     f"divergence={grp['surface_vs_implied_divergence'].mean():.4f}")
     return final
+
+
+SCORE_COLS = [
+    "oil_impact_score", "supply_disruption_signal", "demand_outlook_signal",
+    "geopolitical_risk_signal", "surface_vs_implied_divergence",
+    "institutional_confidence", "dominant_theme", "reasoning",
+    "llm_scored", "llm_failed",
+]
+
+
+def _save_full_output(corpus: pd.DataFrame,
+                      historic_df: pd.DataFrame | None,
+                      daily_df: pd.DataFrame | None,
+                      out: Path):
+    """
+    Build a complete llm_scores.parquet by merging:
+    1. Historic scores (matched by date+source)
+    2. Daily scores (matched by index)
+    for every document in the current corpus.
+    """
+    rows = []
+    daily_idx = set(daily_df.index.tolist()) if daily_df is not None else set()
+
+    # Build lookup: (date_str, source) → score row from historic
+    hist_lookup = {}
+    if historic_df is not None:
+        for _, r in historic_df.iterrows():
+            key = (str(r["date"].date()), str(r.get("source", "")))
+            hist_lookup[key] = r
+
+    for idx, row in corpus.iterrows():
+        doc_date   = row["date"]
+        doc_source = str(row.get("source", ""))
+        hist_key   = (str(doc_date.date()), doc_source)
+
+        if idx in daily_idx and daily_df is not None:
+            # Use daily score (most recent — overrides historic for same doc)
+            score_row = daily_df.loc[idx] if idx in daily_df.index else None
+        elif hist_key in hist_lookup:
+            score_row = hist_lookup[hist_key]
+        else:
+            score_row = None
+
+        if score_row is not None:
+            entry = {col: score_row.get(col, 0.0) for col in SCORE_COLS}
+        else:
+            entry = neutral_scores("Not scored — no historic or daily score available")
+
+        entry["doc_index"] = idx
+        rows.append(entry)
+
+    result = pd.DataFrame(rows).set_index("doc_index")
+    result.to_parquet(out)
+    log.info(f"✓ Full output saved: {len(result)} rows → {out}")
 
 
 if __name__ == "__main__":
