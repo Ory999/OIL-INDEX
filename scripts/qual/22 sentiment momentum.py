@@ -14,6 +14,11 @@ Features engineered:
   - Acceleration:             2nd derivative — captures inflection points
   - Per-topic streams:        Separate momentum per BERTopic cluster
   - Divergence momentum:      Rate of change of surface/implied gap
+
+Noise filtering:
+  NOISE_EMAIL and NOISE_SOCIAL topics are excluded before momentum
+  calculation — these contain email headers and social media noise,
+  not oil market content.
 """
 import os, logging
 from pathlib import Path
@@ -26,9 +31,14 @@ log = logging.getLogger(__name__)
 RAW_DIR = Path(os.getenv("DATA_DIR", "data/raw"))
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-EMA_FAST  = int(os.getenv("EMA_FAST",  "3"))
-EMA_SLOW  = int(os.getenv("EMA_SLOW",  "14"))
-RSI_WIN   = 7
+EMA_FAST = int(os.getenv("EMA_FAST", "3"))
+EMA_SLOW = int(os.getenv("EMA_SLOW", "14"))
+RSI_WIN  = 7
+
+# FIX 1: topics excluded from momentum calculation
+NOISE_TOPICS = {"NOISE_EMAIL", "NOISE_SOCIAL"}
+# FIX 2: topics excluded from per-topic feature streams
+SKIP_TOPICS  = {"NOISE_EMAIL", "NOISE_SOCIAL", "OUTLIER", "UNKNOWN", "PENDING_BACKFILL"}
 
 
 def compute_rsi(series: pd.Series, window: int = 7) -> pd.Series:
@@ -44,6 +54,7 @@ def build_daily_sentiment(corpus_df: pd.DataFrame) -> pd.DataFrame:
     """
     Aggregate document-level scores to daily time series.
     Multiple documents on same day are averaged.
+    Noise topics already filtered before this function is called.
     """
     corpus_df = corpus_df.copy()
     corpus_df["date"] = pd.to_datetime(corpus_df["date"]).dt.normalize()
@@ -64,13 +75,14 @@ def build_daily_sentiment(corpus_df: pd.DataFrame) -> pd.DataFrame:
 
     # Per-source daily series
     for source in corpus_df["source"].unique():
-        sub = corpus_df[corpus_df["source"] == source].groupby("date")["oil_impact_score"].mean()
+        sub = (corpus_df[corpus_df["source"] == source]
+               .groupby("date")["oil_impact_score"].mean())
         daily[f"sent_{source.lower()}"] = sub
 
-    # Per-topic daily series
+    # FIX 2: Per-topic daily series — skip noise and placeholder topics
     if "topic_label" in corpus_df.columns:
         for topic in corpus_df["topic_label"].unique():
-            if topic in ["OUTLIER", "UNKNOWN"]:
+            if topic in SKIP_TOPICS:
                 continue
             sub = (corpus_df[corpus_df["topic_label"] == topic]
                    .groupby("date")["oil_impact_score"].mean())
@@ -98,8 +110,8 @@ def engineer_momentum(daily_df: pd.DataFrame) -> pd.DataFrame:
         df[f"sent_roc_{lag}d"] = df[base].diff(lag)
 
     # ── EMA Crossover (Jegadeesh & Titman 1993 momentum) ─────────────────
-    df["sent_ema_fast"]  = df[base].ewm(span=EMA_FAST,  adjust=False).mean()
-    df["sent_ema_slow"]  = df[base].ewm(span=EMA_SLOW,  adjust=False).mean()
+    df["sent_ema_fast"]  = df[base].ewm(span=EMA_FAST, adjust=False).mean()
+    df["sent_ema_slow"]  = df[base].ewm(span=EMA_SLOW, adjust=False).mean()
     df["sent_ema_cross"] = df["sent_ema_fast"] - df["sent_ema_slow"]
 
     # ── RSI on sentiment ──────────────────────────────────────────────────
@@ -148,6 +160,13 @@ def run_sentiment_momentum():
         log.warning("Corpus empty — skipping momentum engineering")
         return pd.DataFrame()
 
+    # FIX 1: Filter noise topics before momentum calculation
+    if "topic_label" in corpus.columns:
+        noise_count = corpus["topic_label"].isin(NOISE_TOPICS).sum()
+        corpus = corpus[~corpus["topic_label"].isin(NOISE_TOPICS)].copy()
+        log.info(f"  Filtered {noise_count} noise documents — "
+                 f"{len(corpus)} remaining for momentum")
+
     log.info("Building daily sentiment aggregation...")
     daily = build_daily_sentiment(corpus)
 
@@ -157,7 +176,6 @@ def run_sentiment_momentum():
     features.to_parquet(out)
     log.info(f"✓ Sentiment features saved → {out}  ({len(features)} trading days)")
 
-    # Score summary
     if "oil_impact_score" in features.columns:
         log.info(f"  oil_impact_score range: "
                  f"{features['oil_impact_score'].min():+.4f} to "
