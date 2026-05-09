@@ -1,4 +1,7 @@
-# Quantitative Pipeline v2
+# Quantitative Pipeline
+# Runs Mon-Fri at 06:00 UTC — fetches market data, assembles master dataset.
+# Triggers the qualitative pipeline on completion via workflow_run.
+
 name: Quantitative Pipeline
 
 on:
@@ -22,6 +25,7 @@ jobs:
       DATA_DIR:      data/raw
       FEATURES_DIR:  data/features
       RESULTS_DIR:   data/results
+      HISTORIC_DIR:  data/Historic
 
     steps:
       - name: Checkout repository
@@ -37,7 +41,7 @@ jobs:
                        pyarrow python-dotenv tqdm matplotlib seaborn
 
       - name: Create data directories
-        run: mkdir -p data/raw data/features data/results
+        run: mkdir -p data/raw data/features data/results data/Historic
 
       - name: Fetch market prices
         run: python3 "scripts/quant/01 fetch prices.py"
@@ -85,9 +89,9 @@ jobs:
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Pipeline completed successfully"
+            echo "✅ Quantitative pipeline completed successfully"
             cat data/results/pipeline_metadata.json 2>/dev/null || true
           else
-            echo "❌ Pipeline FAILED"
+            echo "❌ Quantitative pipeline FAILED"
             exit 1
           fi
