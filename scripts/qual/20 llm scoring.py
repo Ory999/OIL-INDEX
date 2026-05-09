@@ -33,7 +33,29 @@ SOURCE_CONTEXT = {
     "EIA_STEO":         "EIA Short-Term Energy Outlook — US government official oil market forecast",
     "ENERGY_SECRETARY": "US Energy Secretary official speech — direct US government energy policy signal",
 }
-
+# JSON schema, mirrors the LM Studio preset (Semesterprojekt)
+# Enforces score ranges and valid dominant_theme values at token level
+RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "oil_impact_score":              {"type": "number", "minimum": -1, "maximum": 1},
+        "supply_disruption_signal":      {"type": "number", "minimum": -1, "maximum": 1},
+        "demand_outlook_signal":         {"type": "number", "minimum": -1, "maximum": 1},
+        "geopolitical_risk_signal":      {"type": "number", "minimum": -1, "maximum": 1},
+        "surface_vs_implied_divergence": {"type": "number", "minimum": 0,  "maximum": 1},
+        "institutional_confidence":      {"type": "number", "minimum": 0,  "maximum": 1},
+        "dominant_theme": {
+            "type": "string",
+            "enum": ["SUPPLY_CONCERN", "DEMAND_WEAKNESS", "GEOPOLITICAL",
+                     "PRODUCTION_CUT", "PRODUCTION_INCREASE", "MARKET_BALANCE",
+                     "PRICE_FORECAST", "SANCTIONS", "NEUTRAL"]
+        },
+        "reasoning": {"type": "string"}
+    },
+    "required": ["oil_impact_score", "supply_disruption_signal", "demand_outlook_signal",
+                 "geopolitical_risk_signal", "surface_vs_implied_divergence",
+                 "institutional_confidence", "dominant_theme", "reasoning"]
+}
 SYSTEM_PROMPT = """You are a quantitative analyst specialising in WTI crude oil commodity markets with 20 years of experience at a major energy trading desk.
 
 Your task is to analyse official institutional communications and extract structured sentiment signals that quantify their directional impact on WTI crude oil prices.
@@ -167,6 +189,15 @@ def score_document_with_retry(client, model: str, text: str,
                 ],
                 temperature=0.1,
                 max_tokens=400,
+                reasoning_effort="high",
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name":   "oil_sentiment_scores",
+                        "strict": True,
+                        "schema": RESPONSE_SCHEMA,
+                    }
+                },
             )
             raw = response.choices[0].message.content.strip()
             if "```" in raw:
