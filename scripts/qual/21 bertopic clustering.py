@@ -77,7 +77,12 @@ def ensure_model_available() -> bool:
         return True
     if HISTORIC_MODEL_PATH.exists():
         try:
-            shutil.copytree(str(HISTORIC_MODEL_PATH), str(MODEL_PATH))
+            # FIX 1: dirs_exist_ok=True prevents crash if destination already exists
+            shutil.copytree(
+                str(HISTORIC_MODEL_PATH),
+                str(MODEL_PATH),
+                dirs_exist_ok=True
+            )
             log.info(f"✓ Copied historic BERTopic model → {MODEL_PATH}")
             return True
         except Exception as e:
@@ -120,6 +125,11 @@ def run_bertopic_clustering():
     corpus = pd.read_parquet(llm_path)
     if len(corpus) == 0:
         log.warning("LLM scores empty — skipping BERTopic")
+        return pd.DataFrame()
+
+    # FIX 2: guard against missing text_clean column early
+    if "text_clean" not in corpus.columns:
+        log.warning("text_clean column missing from llm_scores.parquet — check script 20 output")
         return pd.DataFrame()
 
     corpus["date"] = pd.to_datetime(corpus["date"]).dt.tz_localize(None).dt.normalize()
@@ -165,10 +175,9 @@ def run_bertopic_clustering():
                         str(MODEL_PATH),
                         embedding_model=embedding_model
                     )
-                    # FIX 1: use column access, not .get() on Series
+                    # FIX 3: column access not .get() on Series
                     new_texts = [
                         str(corpus.loc[idx]["text_clean"])
-                        if "text_clean" in corpus.columns else ""
                         for idx in new_docs_idx
                     ]
                     new_topics, new_probs = topic_model.transform(new_texts)
@@ -206,7 +215,6 @@ def run_bertopic_clustering():
                                                          else all_probs[i]),
                                     "topic_label": TOPIC_LABELS.get(tid, "OTHER"),
                                 }
-                        # FIX 2: use trow not row to avoid shadowing outer loop variable
                         log_topic_info(topic_model)
                         save_model(topic_model)
 
@@ -232,7 +240,6 @@ def run_bertopic_clustering():
                                                  else all_probs[i]),
                             "topic_label": TOPIC_LABELS.get(tid, "OTHER"),
                         }
-                    # FIX 2: use trow not row to avoid shadowing outer loop variable
                     log_topic_info(topic_model)
                     save_model(topic_model)
                 else:
