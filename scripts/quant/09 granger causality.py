@@ -61,8 +61,10 @@ def run_granger_battery(df: pd.DataFrame, target: str, features: list) -> pd.Dat
         except Exception as e:
             log.debug(f"  Granger failed for {feat}: {e}")
 
-    df = pd.DataFrame(results) if df.empty or "p_value" not in df.columns:     return df return df.sort_values("p_value")
-
+    df = pd.DataFrame(results) 
+    if df.empty or "p_value" not in df.columns:     
+     return df 
+    return df.sort_values("p_value")
 
 def run_granger_causality():
     # Always use full NLP-merged dataset if available
