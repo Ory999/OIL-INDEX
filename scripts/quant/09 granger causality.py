@@ -16,7 +16,7 @@ import pandas as pd
 import numpy as np
 from statsmodels.tsa.stattools import grangercausalitytests
 import matplotlib
-matplotlib.use("Agg")  # non-interactive for CI
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s — %(message)s")
@@ -61,13 +61,14 @@ def run_granger_battery(df: pd.DataFrame, target: str, features: list) -> pd.Dat
         except Exception as e:
             log.debug(f"  Granger failed for {feat}: {e}")
 
-    df = pd.DataFrame(results) 
-    if df.empty or "p_value" not in df.columns:     
-     return df 
-    return df.sort_values("p_value")
+    # FIX 1: guard against empty results when all features fail
+    result_df = pd.DataFrame(results)
+    if result_df.empty or "p_value" not in result_df.columns:
+        return result_df
+    return result_df.sort_values("p_value")
+
 
 def run_granger_causality():
-    # Always use full NLP-merged dataset if available
     master_path = FEATURES_DIR / "master_with_nlp.parquet"
     if not master_path.exists():
         log.warning("master_with_nlp.parquet not found — using quantitative master")
@@ -82,15 +83,14 @@ def run_granger_causality():
                   for c in master.columns)
     log.info(f"Testing: {'FULL combined signal (quant + NLP)' if has_nlp else 'quantitative only'}")
 
-    # ── Define feature groups for structured reporting ─────────────────────
     feature_groups = {
         "NLP Sentiment Momentum": [c for c in master.columns if any(
-            x in c for x in ["sent_roc","sent_ema","sent_rsi","sent_accel",
-                              "sent_velocity","sent_momentum"])],
+            x in c for x in ["sent_roc", "sent_ema", "sent_rsi", "sent_accel",
+                              "sent_velocity", "sent_momentum"])],
 
         "NLP Raw Scores": [c for c in master.columns if any(
-            x in c for x in ["oil_impact","supply_disruption","geopolitical",
-                              "finbert","demand_outlook"])],
+            x in c for x in ["oil_impact", "supply_disruption", "geopolitical",
+                              "finbert", "demand_outlook"])],
 
         "LLM Divergence": [c for c in master.columns if "divergence" in c],
 
@@ -98,40 +98,53 @@ def run_granger_causality():
                               if c.startswith("topic_") and "ema" not in c],
 
         "EIA Fundamentals": [c for c in master.columns if any(
-            x in c for x in ["eia_surprise","crude_stocks","refinery",
+            x in c for x in ["eia_surprise", "crude_stocks", "refinery",
                               "crude_production"])],
 
-        "COT Positioning": [c for c in master.columns
-                             if "cot_" in c],
+        "COT Positioning": [c for c in master.columns if "cot_" in c],
 
         "Macro Controls": [c for c in master.columns if any(
-            x in c for x in ["fed_funds","tips_","breakeven","umich",
-                              "usd_logret","vix_logret"])],
+            x in c for x in ["fed_funds", "tips_", "breakeven", "umich",
+                              "usd_logret", "vix_logret"])],
     }
 
     all_results = {}
     for group_name, features in feature_groups.items():
-        available = [f for f in features if f in master.columns
-                     and f != TARGET]
+        available = [f for f in features if f in master.columns and f != TARGET]
         if not available:
             continue
         log.info(f"\nTesting: {group_name} ({len(available)} features)")
         res = run_granger_battery(master, TARGET, available)
         all_results[group_name] = res
+
+        # FIX 2: guard against empty result before accessing 'significant' column
+        if res.empty or "significant" not in res.columns:
+            log.info(f"  Significant: 0 / {len(available)}")
+            continue
+
         sig = res[res["significant"]]
         log.info(f"  Significant: {len(sig)} / {len(res)}")
         if len(sig):
-            log.info(f"  Best: {sig.iloc[0]['feature']} (p={sig.iloc[0]['p_value']:.4f}, lag={sig.iloc[0]['best_lag']}d)")
+            log.info(f"  Best: {sig.iloc[0]['feature']} "
+                     f"(p={sig.iloc[0]['p_value']:.4f}, lag={sig.iloc[0]['best_lag']}d)")
 
-    # ── Consolidate ────────────────────────────────────────────────────────
+    # FIX 3: correct indentation on empty results guard
     if not all_results:
-     log.warning("No features available for Granger testing — saving empty results")
-     pd.DataFrame().to_csv(RESULTS_DIR / "granger_all_results.csv", index=False)
-     pd.DataFrame().to_csv(RESULTS_DIR / "granger_significant.csv", index=False)
-     return pd.DataFrame()
+        log.warning("No features available for Granger testing — saving empty results")
+        pd.DataFrame().to_csv(RESULTS_DIR / "granger_all_results.csv", index=False)
+        pd.DataFrame().to_csv(RESULTS_DIR / "granger_significant.csv", index=False)
+        return pd.DataFrame()
 
-    combined = pd.concat(all_results.values(), ignore_index=True)
-    for group, res in all_results.items():
+    # Filter to non-empty results before concat
+    non_empty = {k: v for k, v in all_results.items() if not v.empty}
+    if not non_empty:
+        log.warning("All Granger results were empty — saving empty output")
+        pd.DataFrame().to_csv(RESULTS_DIR / "granger_all_results.csv", index=False)
+        pd.DataFrame().to_csv(RESULTS_DIR / "granger_significant.csv", index=False)
+        return pd.DataFrame()
+
+    combined = pd.concat(non_empty.values(), ignore_index=True)
+    for group, res in non_empty.items():
         combined.loc[combined["feature"].isin(res["feature"]), "group"] = group
 
     combined.to_csv(RESULTS_DIR / "granger_all_results.csv", index=False)
@@ -143,11 +156,11 @@ def run_granger_causality():
     if len(sig_all):
         log.info(f"  Top 5 features:")
         for _, row in sig_all.head(5).iterrows():
-            log.info(f"    {row['feature']:45s} p={row['p_value']:.4f}  lag={row['best_lag']}d  ({row['group']})")
+            log.info(f"    {row['feature']:45s} p={row['p_value']:.4f}  "
+                     f"lag={row['best_lag']}d  ({row['group']})")
 
-    # ── Visualise ──────────────────────────────────────────────────────────
     if len(combined):
-        top20 = combined.nsmallest(20, "p_value")
+        top20  = combined.nsmallest(20, "p_value")
         colors = ["#15803D" if s else "#D1D5DB" for s in top20["significant"]]
 
         fig, ax = plt.subplots(figsize=(12, 8))
