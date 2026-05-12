@@ -9,7 +9,16 @@ Incremental saves every 50 documents — max 50 documents lost on crash.
 ALIGNMENT NOTE:
   SYSTEM_PROMPT and build_user_prompt() are locked to match the historic
   backfill exactly (prompt_version hash: 0d23c19bbf76d4ee62cc685480ea43f0).
-  Do NOT modify these without re-scoring the full historic corpus.
+
+  reasoning_effort="high" and RESPONSE_SCHEMA are passed explicitly in the
+  API call because these were active during the historic backfill via the
+  LM Studio Semesterprojekt preset (Custom Fields > Reasoning Effort = High,
+  Structured Output = enabled with the schema below). Passing them in the
+  API call guarantees identical inference behaviour regardless of which
+  preset is active in LM Studio at run time.
+
+  Do NOT modify SYSTEM_PROMPT, RESPONSE_SCHEMA, reasoning_effort, or
+  build_user_prompt() without re-scoring the full historic corpus.
 """
 import os, json, logging, time, re, hashlib
 from pathlib import Path
@@ -35,6 +44,35 @@ SOURCE_CONTEXT = {
     "OPEC_MOMR": "OPEC Monthly Oil Market Report — official production cartel assessment",
     "ARAMCO":    "Saudi Aramco press coverage — world's largest oil producer",
     "EIA_STEO":  "EIA Short-Term Energy Outlook — US government official oil market forecast",
+}
+
+# ── JSON RESPONSE SCHEMA ──────────────────────────────────────────────────────
+# Matches the Structured Output schema in the LM Studio Semesterprojekt preset.
+# The preset enforced this schema during the historic backfill at inference time.
+# Passed explicitly in the API call so GitHub Actions gets identical behaviour
+# regardless of which preset is loaded in LM Studio at run time.
+RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "oil_impact_score":              {"type": "number", "minimum": -1, "maximum": 1},
+        "supply_disruption_signal":      {"type": "number", "minimum": -1, "maximum": 1},
+        "demand_outlook_signal":         {"type": "number", "minimum": -1, "maximum": 1},
+        "geopolitical_risk_signal":      {"type": "number", "minimum": -1, "maximum": 1},
+        "surface_vs_implied_divergence": {"type": "number", "minimum": 0,  "maximum": 1},
+        "institutional_confidence":      {"type": "number", "minimum": 0,  "maximum": 1},
+        "dominant_theme": {
+            "type": "string",
+            "enum": ["SUPPLY_CONCERN", "DEMAND_WEAKNESS", "GEOPOLITICAL",
+                     "PRODUCTION_CUT", "PRODUCTION_INCREASE", "MARKET_BALANCE",
+                     "PRICE_FORECAST", "SANCTIONS", "NEUTRAL"]
+        },
+        "reasoning": {"type": "string"}
+    },
+    "required": [
+        "oil_impact_score", "supply_disruption_signal", "demand_outlook_signal",
+        "geopolitical_risk_signal", "surface_vs_implied_divergence",
+        "institutional_confidence", "dominant_theme", "reasoning"
+    ]
 }
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
@@ -65,7 +103,7 @@ CRITICAL RULES:
 — surface_vs_implied_divergence must be between 0.0 and 1.0"""
 
 # Verify prompt has not drifted from the historic backfill version
-PROMPT_VERSION = hashlib.md5(SYSTEM_PROMPT.encode()).hexdigest()
+PROMPT_VERSION          = hashlib.md5(SYSTEM_PROMPT.encode()).hexdigest()
 PROMPT_VERSION_EXPECTED = "0d23c19bbf76d4ee62cc685480ea43f0"
 if PROMPT_VERSION != PROMPT_VERSION_EXPECTED:
     raise RuntimeError(
@@ -78,7 +116,7 @@ if PROMPT_VERSION != PROMPT_VERSION_EXPECTED:
 def build_user_prompt(text: str, source: str, date: str) -> str:
     """
     LOCKED to match historic backfill format.
-    No analytical guidance questions — simple document + JSON template only.
+    Simple document + JSON template — no analytical guidance questions.
     """
     source_context = SOURCE_CONTEXT.get(source, f"Official institutional statement — {source}")
     text_excerpt   = text[:2000].strip()
@@ -142,12 +180,12 @@ def get_llm_client():
 def score_document_with_retry(client, model: str, text: str,
                                source: str, date: str) -> dict:
     """
-    API call matches historic backfill exactly:
-    - temperature=0.1
-    - max_tokens=400
-    - NO reasoning_effort (not used in backfill)
-    - NO response_format / JSON schema enforcement (not used in backfill)
-    JSON validity enforced downstream via json.loads() with retry.
+    API call replicates the LM Studio Semesterprojekt preset settings exactly:
+    - temperature=0.1              (Settings > Temperature)
+    - max_tokens=400               (Settings > Limit Response Length — off,
+                                    but 400 is a safe ceiling for the JSON schema)
+    - reasoning_effort="high"      (Custom Fields > Reasoning Effort = High)
+    - response_format JSON schema  (Structured Output — enabled with RESPONSE_SCHEMA)
     """
     last_error = ""
     for attempt in range(1, MAX_RETRIES + 1):
@@ -160,6 +198,15 @@ def score_document_with_retry(client, model: str, text: str,
                 ],
                 temperature=0.1,
                 max_tokens=400,
+                reasoning_effort="high",
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name":   "oil_sentiment_scores",
+                        "strict": True,
+                        "schema": RESPONSE_SCHEMA,
+                    }
+                },
             )
             raw = response.choices[0].message.content.strip()
             if "```" in raw:
@@ -350,13 +397,13 @@ def _save_full_output(corpus: pd.DataFrame,
                       daily_df: pd.DataFrame | None,
                       out: Path):
     """
-    Build a complete llm_scores.parquet by merging:
+    Build complete llm_scores.parquet by merging:
     1. Historic scores (matched by date+source key)
     2. Daily scores (matched by corpus index)
     for every document in the current corpus.
     Includes corpus metadata columns (date, source, text_clean) so
     downstream scripts (21 BERTopic, 22 momentum) can read them directly.
-    prompt_version column written for every row — historic rows get
+    prompt_version column written for every row — historic rows receive
     PROMPT_VERSION_EXPECTED since they were scored with the backfill prompt.
     """
     rows      = []
