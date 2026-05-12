@@ -1,3 +1,8 @@
+# Econometric Analysis Pipeline (Full PRCSI)
+# Triggers automatically after Qualitative NLP Pipeline completes.
+# Runs stationarity tests, Granger causality, VAR/IRF, SHAP, and builds
+# the full PRCSI index from the combined NLP + quantitative master dataset.
+
 name: Econometric Analysis (Full PRCSI)
 
 on:
@@ -6,35 +11,41 @@ on:
     types: [completed]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   econometrics:
     name: Granger + VAR + PRCSI Index
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions:
-      contents: write
+
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
 
     env:
-      FEATURES_DIR: data/features
-      RESULTS_DIR:  data/results
+      FEATURES_DIR:  data/features
+      RESULTS_DIR:   data/results
+      HISTORIC_DIR:  data/Historic
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
-          pip3 install -r requirements.txt
+          pip3 install pandas numpy pyarrow scipy statsmodels \
+                       scikit-learn shap matplotlib seaborn \
+                       python-dotenv tqdm
 
       - name: Create data directories
-        run: mkdir -p data/features data/results
+        run: mkdir -p data/features data/results data/Historic
 
-      - name: Check qualitative scores are available
+      - name: Check NLP scores are available
         run: |
           if [ ! -f data/features/master_with_nlp.parquet ]; then
             echo "⚠️  master_with_nlp.parquet not found"
@@ -45,26 +56,27 @@ jobs:
           fi
 
       - name: Stationarity tests
-        run: python3 "quant/08 stationarity.py"
+        run: python3 "scripts/quant/08 stationarity.py"
 
       - name: Granger causality
-        run: python3 "quant/09 granger causality.py"
+        run: python3 "scripts/quant/09 granger causality.py"
 
       - name: VAR model and IRF
-        run: python3 "quant/10 var irf.py"
+        run: python3 "scripts/quant/10 var irf.py"
 
       - name: SHAP feature importance
-        run: python3 "quant/11 shap analysis.py"
+        run: python3 "scripts/quant/11 shap analysis.py"
 
       - name: Build full PRCSI index
-        run: python3 "quant/12 build full index.py"
+        run: python3 "scripts/quant/12 build full index.py"
 
       - name: Upload econometric results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: econometric-results-${{ github.run_number }}
           path: data/results/
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Commit results
         run: |
