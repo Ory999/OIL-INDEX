@@ -387,9 +387,9 @@ SCORE_COLS = [
     "llm_scored", "llm_failed", "prompt_version",
 ]
 
-CORPUS_COLS = ["date", "source", "text", "text_clean", "word_count",
-               "finbert_score", "finbert_pos", "finbert_neg",
-               "finbert_neu", "finbert_confidence"]
+# Historic FinBERT scores (695 docs) remain in data/Historic/finbert_scores.parquet
+# for the paper's baseline correlation result (r=0.13 vs LLM oil_impact_score).
+CORPUS_COLS = ["date", "source", "text", "text_clean", "word_count"]
 
 
 def _save_full_output(corpus: pd.DataFrame,
