@@ -21,6 +21,7 @@ data/raw/*.parquet
 !data/raw/aramco_corpus.parquet
 !data/raw/eia_steo_corpus.parquet
 !data/raw/energy_sec_corpus.parquet
+!data/raw/sentiment_features.parquet
 
 # Feature parquet files — ignore large intermediates but keep master datasets
 data/features/*.parquet
