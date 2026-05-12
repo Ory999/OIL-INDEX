@@ -5,8 +5,13 @@ Model: Locally hosted openai/gpt-oss-20b via ngrok tunnel
 Resumable — if interrupted, re-running skips already scored documents.
 Historical backfill loaded from data/Historic/ — only new documents scored.
 Incremental saves every 50 documents — max 50 documents lost on crash.
+
+ALIGNMENT NOTE:
+  SYSTEM_PROMPT and build_user_prompt() are locked to match the historic
+  backfill exactly (prompt_version hash: 0d23c19bbf76d4ee62cc685480ea43f0).
+  Do NOT modify these without re-scoring the full historic corpus.
 """
-import os, json, logging, time, re
+import os, json, logging, time, re, hashlib
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -27,33 +32,14 @@ RETRY_DELAY  = 5.0
 SAVE_EVERY   = 50
 
 SOURCE_CONTEXT = {
-    "OPEC_MOMR":  "OPEC Monthly Oil Market Report — official production cartel assessment",
-    "ARAMCO":     "Saudi Aramco official press release — world's largest oil producer",
-    "EIA_STEO":   "EIA Short-Term Energy Outlook — US government official oil market forecast",
+    "OPEC_MOMR": "OPEC Monthly Oil Market Report — official production cartel assessment",
+    "ARAMCO":    "Saudi Aramco press coverage — world's largest oil producer",
+    "EIA_STEO":  "EIA Short-Term Energy Outlook — US government official oil market forecast",
 }
 
-RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "oil_impact_score":              {"type": "number", "minimum": -1, "maximum": 1},
-        "supply_disruption_signal":      {"type": "number", "minimum": -1, "maximum": 1},
-        "demand_outlook_signal":         {"type": "number", "minimum": -1, "maximum": 1},
-        "geopolitical_risk_signal":      {"type": "number", "minimum": -1, "maximum": 1},
-        "surface_vs_implied_divergence": {"type": "number", "minimum": 0,  "maximum": 1},
-        "institutional_confidence":      {"type": "number", "minimum": 0,  "maximum": 1},
-        "dominant_theme": {
-            "type": "string",
-            "enum": ["SUPPLY_CONCERN", "DEMAND_WEAKNESS", "GEOPOLITICAL",
-                     "PRODUCTION_CUT", "PRODUCTION_INCREASE", "MARKET_BALANCE",
-                     "PRICE_FORECAST", "SANCTIONS", "NEUTRAL"]
-        },
-        "reasoning": {"type": "string"}
-    },
-    "required": ["oil_impact_score", "supply_disruption_signal", "demand_outlook_signal",
-                 "geopolitical_risk_signal", "surface_vs_implied_divergence",
-                 "institutional_confidence", "dominant_theme", "reasoning"]
-}
-
+# ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
+# LOCKED to match historic backfill. Hash: 0d23c19bbf76d4ee62cc685480ea43f0
+# Do NOT add, remove, or reword any line without re-scoring the historic corpus.
 SYSTEM_PROMPT = """You are a quantitative analyst specialising in WTI crude oil commodity markets with 20 years of experience at a major energy trading desk.
 
 Your task is to analyse official institutional communications and extract structured sentiment signals that quantify their directional impact on WTI crude oil prices.
@@ -66,67 +52,44 @@ SCORING FRAMEWORK — ALL SCORES ARE ON A STRICT -1.0 TO +1.0 SCALE:
 - +1.0 = Maximum bullish signal (extreme upward pressure on oil prices)
 
 SCORE DEFINITIONS:
-1. oil_impact_score (-1 to +1):
-   Consider: production cuts (+), supply disruptions (+), demand growth (+)
-   vs. production increases (-), demand weakness (-), oversupply (-), price caps (-)
-
-2. supply_disruption_signal (-1 to +1):
-   +1 = severe imminent supply disruption (war, sanctions, OPEC cut, pipeline failure)
-   -1 = large supply surplus, production ramp-up, supply glut
-   0  = balanced supply conditions
-
-3. demand_outlook_signal (-1 to +1):
-   +1 = strong demand growth expected (economic expansion, emerging market growth)
-   -1 = demand destruction expected (recession, EV transition, efficiency gains)
-   0  = stable demand outlook
-
-4. geopolitical_risk_signal (-1 to +1):
-   +1 = high geopolitical risk in oil-producing regions (conflict, sanctions, instability)
-   -1 = geopolitical de-escalation, stability improvement, sanctions relief
-   0  = no significant geopolitical developments
-
-5. surface_vs_implied_divergence (0 to 1, NOT negative):
-   Measures the GAP between surface language and implied market reality.
-   HIGH (near 1.0) when: institution uses neutral/reassuring language but implies bearish reality,
-   OR uses positive language but implies risk. Classic examples:
-   — "The market remains broadly balanced" when supply data shows tightening = high divergence
-   — "We are monitoring the situation carefully" before announcing sanctions = high divergence
-   — "Production levels are appropriate" when hinting at cuts = high divergence
-   LOW (near 0) when surface language directly matches the implied market signal.
-
-6. institutional_confidence (0 to 1):
-   How certain and committed the institution sounds.
-   1.0 = definitive statements, clear commitments, specific numbers
-   0.5 = hedged language, conditional statements
-   0.0 = vague, non-committal, placeholder language
+1. oil_impact_score (-1 to +1): production cuts (+), supply disruptions (+), demand growth (+) vs production increases (-), demand weakness (-), oversupply (-)
+2. supply_disruption_signal (-1 to +1): +1 = severe supply disruption, -1 = supply surplus, 0 = balanced
+3. demand_outlook_signal (-1 to +1): +1 = strong demand growth, -1 = demand destruction, 0 = stable
+4. geopolitical_risk_signal (-1 to +1): +1 = high geopolitical risk, -1 = de-escalation, 0 = no developments
+5. surface_vs_implied_divergence (0 to 1): GAP between surface language and implied market reality
+6. institutional_confidence (0 to 1): 1.0 = definitive statements, 0.5 = hedged, 0.0 = vague
 
 CRITICAL RULES:
 — Return ONLY valid JSON, no other text, no markdown
 — All scores except surface_vs_implied_divergence must be between -1.0 and +1.0
-— surface_vs_implied_divergence must be between 0.0 and 1.0
-— Base scores on the OIL MARKET IMPACT, not general economic sentiment
-— Consider the historical precedent: what typically happens to oil prices after similar statements?
-— High surface_vs_implied_divergence scores should be rare (reserved for genuinely ambiguous rhetoric)"""
+— surface_vs_implied_divergence must be between 0.0 and 1.0"""
+
+# Verify prompt has not drifted from the historic backfill version
+PROMPT_VERSION = hashlib.md5(SYSTEM_PROMPT.encode()).hexdigest()
+PROMPT_VERSION_EXPECTED = "0d23c19bbf76d4ee62cc685480ea43f0"
+if PROMPT_VERSION != PROMPT_VERSION_EXPECTED:
+    raise RuntimeError(
+        f"SYSTEM_PROMPT hash mismatch — live prompt ({PROMPT_VERSION}) does not match "
+        f"historic backfill ({PROMPT_VERSION_EXPECTED}). "
+        f"Re-score the historic corpus before deploying this change."
+    )
 
 
 def build_user_prompt(text: str, source: str, date: str) -> str:
+    """
+    LOCKED to match historic backfill format.
+    No analytical guidance questions — simple document + JSON template only.
+    """
     source_context = SOURCE_CONTEXT.get(source, f"Official institutional statement — {source}")
     text_excerpt   = text[:2000].strip()
     return f"""DOCUMENT ANALYSIS REQUEST
 
 Source type: {source_context}
 Publication date: {date}
-Text excerpt (first 2000 characters):
+Text excerpt:
 \"\"\"
 {text_excerpt}
 \"\"\"
-
-Analyse this document for its directional impact on WTI crude oil prices.
-Consider:
-1. What explicit statements are made about supply, demand, and prices?
-2. What is IMPLIED but not directly stated? (key for divergence score)
-3. What historical precedent exists for similar institutional language?
-4. How does the source's authority affect market credibility?
 
 Return ONLY this JSON object with no other text:
 {{
@@ -136,8 +99,8 @@ Return ONLY this JSON object with no other text:
     "geopolitical_risk_signal":      <float -1.0 to 1.0>,
     "surface_vs_implied_divergence": <float 0.0 to 1.0>,
     "institutional_confidence":      <float 0.0 to 1.0>,
-    "dominant_theme":                <string: one of SUPPLY_CONCERN|DEMAND_WEAKNESS|GEOPOLITICAL|PRODUCTION_CUT|PRODUCTION_INCREASE|MARKET_BALANCE|PRICE_FORECAST|SANCTIONS|NEUTRAL>,
-    "reasoning":                     <string: max 50 words explaining the scores>
+    "dominant_theme":                <string: SUPPLY_CONCERN|DEMAND_WEAKNESS|GEOPOLITICAL|PRODUCTION_CUT|PRODUCTION_INCREASE|MARKET_BALANCE|PRICE_FORECAST|SANCTIONS|NEUTRAL>,
+    "reasoning":                     <string: max 50 words>
 }}"""
 
 
@@ -153,6 +116,7 @@ def neutral_scores(reason: str = "LLM failed after retries") -> dict:
         "reasoning":                     reason,
         "llm_scored":                    False,
         "llm_failed":                    True,
+        "prompt_version":                PROMPT_VERSION,
     }
 
 
@@ -169,6 +133,7 @@ def get_llm_client():
         models = client.models.list()
         model  = models.data[0].id if models.data else LLM_MODEL
         log.info(f"✓ Connected to local model: {model} at {LLM_BASE_URL}")
+        log.info(f"  Prompt version: {PROMPT_VERSION} ✓ (matches historic backfill)")
         return client, model
     except Exception as e:
         raise ConnectionError(f"Cannot connect to local model at {LLM_BASE_URL}: {e}")
@@ -176,6 +141,14 @@ def get_llm_client():
 
 def score_document_with_retry(client, model: str, text: str,
                                source: str, date: str) -> dict:
+    """
+    API call matches historic backfill exactly:
+    - temperature=0.1
+    - max_tokens=400
+    - NO reasoning_effort (not used in backfill)
+    - NO response_format / JSON schema enforcement (not used in backfill)
+    JSON validity enforced downstream via json.loads() with retry.
+    """
     last_error = ""
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -187,22 +160,14 @@ def score_document_with_retry(client, model: str, text: str,
                 ],
                 temperature=0.1,
                 max_tokens=400,
-                reasoning_effort="high",
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name":   "oil_sentiment_scores",
-                        "strict": True,
-                        "schema": RESPONSE_SCHEMA,
-                    }
-                },
             )
             raw = response.choices[0].message.content.strip()
             if "```" in raw:
                 raw = re.sub(r'```json?|```', '', raw).strip()
             scores = json.loads(raw)
-            scores["llm_scored"] = True
-            scores["llm_failed"] = False
+            scores["llm_scored"]     = True
+            scores["llm_failed"]     = False
+            scores["prompt_version"] = PROMPT_VERSION
             return scores
         except json.JSONDecodeError as e:
             last_error = f"JSON parse error: {e}"
@@ -353,6 +318,7 @@ def run_llm_scoring():
     _save_full_output(corpus, historic_df, already_scored_df, out)
 
     log.info(f"\n✓ LLM scoring complete → {out}")
+    log.info(f"  Prompt version:    {PROMPT_VERSION}")
     log.info(f"  New docs scored:   {len(records)} ({len(records)-failed} success, {failed} failed)")
 
     final = pd.read_parquet(out)
@@ -366,15 +332,14 @@ def run_llm_scoring():
     return final
 
 
-# Score columns saved to llm_scores.parquet
+# ── Column definitions ────────────────────────────────────────────────────────
 SCORE_COLS = [
     "oil_impact_score", "supply_disruption_signal", "demand_outlook_signal",
     "geopolitical_risk_signal", "surface_vs_implied_divergence",
     "institutional_confidence", "dominant_theme", "reasoning",
-    "llm_scored", "llm_failed",
+    "llm_scored", "llm_failed", "prompt_version",
 ]
 
-# FIX: corpus metadata columns also saved so script 21 can access text_clean
 CORPUS_COLS = ["date", "source", "text", "text_clean", "word_count",
                "finbert_score", "finbert_pos", "finbert_neg",
                "finbert_neu", "finbert_confidence"]
@@ -386,11 +351,13 @@ def _save_full_output(corpus: pd.DataFrame,
                       out: Path):
     """
     Build a complete llm_scores.parquet by merging:
-    1. Historic scores (matched by date+source)
-    2. Daily scores (matched by index)
+    1. Historic scores (matched by date+source key)
+    2. Daily scores (matched by corpus index)
     for every document in the current corpus.
     Includes corpus metadata columns (date, source, text_clean) so
     downstream scripts (21 BERTopic, 22 momentum) can read them directly.
+    prompt_version column written for every row — historic rows get
+    PROMPT_VERSION_EXPECTED since they were scored with the backfill prompt.
     """
     rows      = []
     daily_idx = set(daily_df.index.tolist()) if daily_df is not None else set()
@@ -414,11 +381,14 @@ def _save_full_output(corpus: pd.DataFrame,
             score_row = None
 
         if score_row is not None:
-            entry = {col: score_row.get(col, 0.0) for col in SCORE_COLS}
+            entry = {col: score_row.get(col, 0.0) for col in SCORE_COLS
+                     if col != "prompt_version"}
+            # Historic rows may not have prompt_version — backfill with expected hash
+            entry["prompt_version"] = score_row.get("prompt_version", PROMPT_VERSION_EXPECTED)
         else:
             entry = neutral_scores("Not scored — no historic or daily score available")
 
-        # FIX: include corpus metadata so script 21 has text_clean available
+        # Include corpus metadata so script 21 has text_clean available
         for col in CORPUS_COLS:
             if col in row.index:
                 entry[col] = row[col]
@@ -433,6 +403,9 @@ def _save_full_output(corpus: pd.DataFrame,
         log.info(f"  text_clean column present ✓ ({result['text_clean'].notna().sum()} non-null)")
     else:
         log.warning("  text_clean column MISSING — script 21 will fail")
+    if "prompt_version" in result.columns:
+        vc = result["prompt_version"].value_counts()
+        log.info(f"  Prompt versions in output: {vc.to_dict()}")
 
 
 if __name__ == "__main__":
