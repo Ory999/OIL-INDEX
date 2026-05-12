@@ -37,5 +37,10 @@
   "prcsi_quant_regime": "NEUTRAL",
   "quant_pipeline_complete": true,
   "quant_run_timestamp": "2026-05-12T14:04:41.923221",
-  "nlp_scores_merged": false
+  "nlp_scores_merged": false,
+  "prcsi_latest": 37.51,
+  "prcsi_regime": "FEAR",
+  "full_index_complete": true,
+  "nlp_scores_used": false,
+  "full_run_timestamp": "2026-05-12T14:09:36.593591"
 }
