@@ -19,6 +19,17 @@ Noise filtering:
   NOISE_EMAIL and NOISE_SOCIAL topics are excluded before momentum
   calculation — these contain email headers and social media noise,
   not oil market content.
+
+Forward-fill strategy:
+  Raw LLM signals (oil_impact_score etc.) are forward-filled 21 trading
+  days — one full publication cycle (OPEC and EIA publish monthly).
+  Without this, raw scores are NaN for ~17 of every 21 days, making them
+  unusable as direct Granger causality inputs.
+  Economically justified: the market holds the most recent institutional
+  view until the next publication replaces it.
+  Momentum/EMA features use 5-day fill — short-term signal decay.
+  FinBERT removed from pipeline — historic scores preserved in
+  data/Historic/finbert_scores.parquet for the paper's r=0.13 result.
 """
 import os, logging
 from pathlib import Path
@@ -35,10 +46,20 @@ EMA_FAST = int(os.getenv("EMA_FAST", "3"))
 EMA_SLOW = int(os.getenv("EMA_SLOW", "14"))
 RSI_WIN  = 7
 
-# FIX 1: topics excluded from momentum calculation
+# Topics excluded from momentum calculation
 NOISE_TOPICS = {"NOISE_EMAIL", "NOISE_SOCIAL"}
-# FIX 2: topics excluded from per-topic feature streams
+# Topics excluded from per-topic feature streams
 SKIP_TOPICS  = {"NOISE_EMAIL", "NOISE_SOCIAL", "OUTLIER", "UNKNOWN", "PENDING_BACKFILL"}
+
+# Raw LLM signal columns — forward-filled 21 days (one publication cycle)
+RAW_LLM_COLS = [
+    "oil_impact_score",
+    "supply_disruption_signal",
+    "demand_outlook_signal",
+    "geopolitical_risk_signal",
+    "surface_vs_implied_divergence",
+    "institutional_confidence",
+]
 
 
 def compute_rsi(series: pd.Series, window: int = 7) -> pd.Series:
@@ -55,19 +76,17 @@ def build_daily_sentiment(corpus_df: pd.DataFrame) -> pd.DataFrame:
     Aggregate document-level scores to daily time series.
     Multiple documents on same day are averaged.
     Noise topics already filtered before this function is called.
+
+    Forward-fill strategy:
+      - All columns: 5-day fill after resample (covers weekends)
+      - Raw LLM signals: additional 21-day fill (covers monthly gaps)
+        Applied after the 5-day fill so weekday gaps are already closed.
     """
     corpus_df = corpus_df.copy()
     corpus_df["date"] = pd.to_datetime(corpus_df["date"]).dt.normalize()
 
-    score_cols = [
-        "finbert_score",
-        "oil_impact_score",
-        "supply_disruption_signal",
-        "demand_outlook_signal",
-        "geopolitical_risk_signal",
-        "surface_vs_implied_divergence",
-        "institutional_confidence",
-    ]
+    # FinBERT removed from pipeline — not included in score_cols
+    score_cols    = RAW_LLM_COLS.copy()
     available_cols = [c for c in score_cols if c in corpus_df.columns]
 
     # Daily mean across all documents
@@ -79,7 +98,7 @@ def build_daily_sentiment(corpus_df: pd.DataFrame) -> pd.DataFrame:
                .groupby("date")["oil_impact_score"].mean())
         daily[f"sent_{source.lower()}"] = sub
 
-    # FIX 2: Per-topic daily series — skip noise and placeholder topics
+    # Per-topic daily series — skip noise and placeholder topics
     if "topic_label" in corpus_df.columns:
         for topic in corpus_df["topic_label"].unique():
             if topic in SKIP_TOPICS:
@@ -91,8 +110,18 @@ def build_daily_sentiment(corpus_df: pd.DataFrame) -> pd.DataFrame:
     # Document count per day
     daily["doc_count"] = corpus_df.groupby("date").size()
 
-    # Resample to business days, forward fill (max 5 days)
+    # Resample to business days — 5-day fill covers weekends and short gaps
     daily = daily.resample("B").mean().ffill(limit=5)
+
+    # Raw LLM signals: extend to 21-day fill (one full publication cycle).
+    # OPEC and EIA publish monthly — without this, raw scores are NaN for
+    # ~17 of every 21 trading days, making them unusable as Granger inputs.
+    available_raw = [c for c in RAW_LLM_COLS if c in daily.columns]
+    daily[available_raw] = daily[available_raw].ffill(limit=21)
+
+    filled_pct = daily[available_raw].notna().mean().mean() * 100
+    log.info(f"  Raw LLM signal coverage after 21-day fill: {filled_pct:.1f}%")
+
     return daily
 
 
@@ -102,8 +131,11 @@ def engineer_momentum(daily_df: pd.DataFrame) -> pd.DataFrame:
     base = "oil_impact_score"
 
     if base not in df.columns:
-        log.warning(f"  '{base}' not in daily sentiment — using finbert_score fallback")
-        base = "finbert_score" if "finbert_score" in df.columns else df.columns[0]
+        log.warning(f"  '{base}' not in daily sentiment — check corpus")
+        if df.columns.empty:
+            return df
+        base = df.columns[0]
+        log.warning(f"  Falling back to: {base}")
 
     # ── Rate of Change ────────────────────────────────────────────────────
     for lag in [1, 3, 7, 14]:
@@ -117,7 +149,7 @@ def engineer_momentum(daily_df: pd.DataFrame) -> pd.DataFrame:
     # ── RSI on sentiment ──────────────────────────────────────────────────
     df["sent_rsi"] = compute_rsi(df[base], window=RSI_WIN)
 
-    # ── Velocity and Acceleration (1st and 2nd derivatives) ───────────────
+    # ── Velocity and Acceleration (1st and 2nd derivatives) ──────────────
     df["sent_velocity"] = df[base].diff(1)
     df["sent_accel"]    = df["sent_velocity"].diff(1)
 
@@ -131,12 +163,12 @@ def engineer_momentum(daily_df: pd.DataFrame) -> pd.DataFrame:
         df["geo_risk_ema"] = df["geopolitical_risk_signal"].ewm(span=7).mean()
         df["geo_risk_roc"] = df["geopolitical_risk_signal"].diff(3)
 
-    # ── Divergence momentum (Information Asymmetry signal) ────────────────
+    # ── Divergence momentum (Information Asymmetry — Akerlof 1970) ────────
     if "surface_vs_implied_divergence" in df.columns:
         df["divergence_ema"] = df["surface_vs_implied_divergence"].ewm(span=5).mean()
         df["divergence_roc"] = df["surface_vs_implied_divergence"].diff(3)
 
-    # ── Per-topic EMA crossovers ───────────────────────────────────────────
+    # ── Per-topic EMA crossovers ──────────────────────────────────────────
     topic_cols = [c for c in df.columns if c.startswith("topic_")]
     for col in topic_cols:
         df[f"{col}_ema_cross"] = (
@@ -160,7 +192,7 @@ def run_sentiment_momentum():
         log.warning("Corpus empty — skipping momentum engineering")
         return pd.DataFrame()
 
-    # FIX 1: Filter noise topics before momentum calculation
+    # Filter noise topics before momentum calculation
     if "topic_label" in corpus.columns:
         noise_count = corpus["topic_label"].isin(NOISE_TOPICS).sum()
         corpus = corpus[~corpus["topic_label"].isin(NOISE_TOPICS)].copy()
@@ -176,14 +208,21 @@ def run_sentiment_momentum():
     features.to_parquet(out)
     log.info(f"✓ Sentiment features saved → {out}  ({len(features)} trading days)")
 
-    if "oil_impact_score" in features.columns:
-        log.info(f"  oil_impact_score range: "
-                 f"{features['oil_impact_score'].min():+.4f} to "
-                 f"{features['oil_impact_score'].max():+.4f}")
+    # Coverage report for raw LLM signals
+    log.info("\n  Raw LLM signal coverage in output:")
+    for col in RAW_LLM_COLS:
+        if col in features.columns:
+            pct = features[col].notna().mean() * 100
+            log.info(f"    {col:40s}: {pct:.1f}%")
+
     if "sent_ema_cross" in features.columns:
-        log.info(f"  sent_ema_cross range:   "
+        log.info(f"\n  sent_ema_cross range: "
                  f"{features['sent_ema_cross'].min():+.4f} to "
                  f"{features['sent_ema_cross'].max():+.4f}")
+    if "sent_accel" in features.columns:
+        log.info(f"  sent_accel range:     "
+                 f"{features['sent_accel'].min():+.4f} to "
+                 f"{features['sent_accel'].max():+.4f}")
 
     return features
 
