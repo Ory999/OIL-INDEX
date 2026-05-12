@@ -20,19 +20,18 @@ RAW_DIR      = Path(os.getenv("DATA_DIR",     "data/raw"))
 HISTORIC_DIR = Path(os.getenv("HISTORIC_DIR", "data/Historic"))
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-LLM_BASE_URL       = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
-LLM_MODEL          = os.getenv("LLM_MODEL",    "openai/gpt-oss-20b")
-MAX_RETRIES        = 3
-RETRY_DELAY        = 5.0
-SAVE_EVERY         = 50
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
+LLM_MODEL    = os.getenv("LLM_MODEL",    "openai/gpt-oss-20b")
+MAX_RETRIES  = 3
+RETRY_DELAY  = 5.0
+SAVE_EVERY   = 50
 
 SOURCE_CONTEXT = {
-    "OPEC_MOMR":        "OPEC Monthly Oil Market Report — official production cartel assessment",
-    "ARAMCO":           "Saudi Aramco official press release — world's largest oil producer",
-    "EIA_STEO":         "EIA Short-Term Energy Outlook — US government official oil market forecast",
+    "OPEC_MOMR":  "OPEC Monthly Oil Market Report — official production cartel assessment",
+    "ARAMCO":     "Saudi Aramco official press release — world's largest oil producer",
+    "EIA_STEO":   "EIA Short-Term Energy Outlook — US government official oil market forecast",
 }
-# JSON schema, mirrors the LM Studio preset (Semesterprojekt)
-# Enforces score ranges and valid dominant_theme values at token level
+
 RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -54,6 +53,7 @@ RESPONSE_SCHEMA = {
                  "geopolitical_risk_signal", "surface_vs_implied_divergence",
                  "institutional_confidence", "dominant_theme", "reasoning"]
 }
+
 SYSTEM_PROMPT = """You are a quantitative analyst specialising in WTI crude oil commodity markets with 20 years of experience at a major energy trading desk.
 
 Your task is to analyse official institutional communications and extract structured sentiment signals that quantify their directional impact on WTI crude oil prices.
@@ -232,11 +232,6 @@ def validate_and_clip_scores(scores: dict) -> dict:
 
 
 def load_historic_scores() -> pd.DataFrame | None:
-    """
-    Load pre-scored historical documents from data/Historic/llm_scores.parquet.
-    These were scored locally (2007-2026) and committed to avoid re-running the LLM.
-    Matching is done by (date, source) so index position does not matter.
-    """
     historic_path = HISTORIC_DIR / "llm_scores.parquet"
     if not historic_path.exists():
         log.info("  No historic scores found — scoring all documents fresh")
@@ -279,7 +274,7 @@ def run_llm_scoring():
     corpus["date"] = pd.to_datetime(corpus["date"]).dt.tz_localize(None).dt.normalize()
 
     # ── Load historic pre-scored documents (date+source matching) ─────────
-    historic_df = load_historic_scores()
+    historic_df   = load_historic_scores()
     historic_keys = set()
     if historic_df is not None and len(historic_df) > 0:
         historic_keys = set(
@@ -299,7 +294,7 @@ def run_llm_scoring():
         except Exception:
             log.info("  No valid daily scores — starting fresh")
 
-    # ── Determine which documents need LLM scoring ─────────────────────────
+    # ── Determine which documents need LLM scoring ────────────────────────
     def needs_scoring(idx, row) -> bool:
         if idx in already_scored_idx:
             return False
@@ -319,7 +314,6 @@ def run_llm_scoring():
 
     if len(to_score) == 0:
         log.info("✓ All documents covered by historic or daily scores — nothing to do")
-        # Build and save the full merged output
         _save_full_output(corpus, historic_df, already_scored_df, out)
         return pd.read_parquet(out)
 
@@ -372,12 +366,18 @@ def run_llm_scoring():
     return final
 
 
+# Score columns saved to llm_scores.parquet
 SCORE_COLS = [
     "oil_impact_score", "supply_disruption_signal", "demand_outlook_signal",
     "geopolitical_risk_signal", "surface_vs_implied_divergence",
     "institutional_confidence", "dominant_theme", "reasoning",
     "llm_scored", "llm_failed",
 ]
+
+# FIX: corpus metadata columns also saved so script 21 can access text_clean
+CORPUS_COLS = ["date", "source", "text", "text_clean", "word_count",
+               "finbert_score", "finbert_pos", "finbert_neg",
+               "finbert_neu", "finbert_confidence"]
 
 
 def _save_full_output(corpus: pd.DataFrame,
@@ -389,11 +389,12 @@ def _save_full_output(corpus: pd.DataFrame,
     1. Historic scores (matched by date+source)
     2. Daily scores (matched by index)
     for every document in the current corpus.
+    Includes corpus metadata columns (date, source, text_clean) so
+    downstream scripts (21 BERTopic, 22 momentum) can read them directly.
     """
-    rows = []
+    rows      = []
     daily_idx = set(daily_df.index.tolist()) if daily_df is not None else set()
 
-    # Build lookup: (date_str, source) → score row from historic
     hist_lookup = {}
     if historic_df is not None:
         for _, r in historic_df.iterrows():
@@ -406,7 +407,6 @@ def _save_full_output(corpus: pd.DataFrame,
         hist_key   = (str(doc_date.date()), doc_source)
 
         if idx in daily_idx and daily_df is not None:
-            # Use daily score (most recent — overrides historic for same doc)
             score_row = daily_df.loc[idx] if idx in daily_df.index else None
         elif hist_key in hist_lookup:
             score_row = hist_lookup[hist_key]
@@ -418,12 +418,21 @@ def _save_full_output(corpus: pd.DataFrame,
         else:
             entry = neutral_scores("Not scored — no historic or daily score available")
 
+        # FIX: include corpus metadata so script 21 has text_clean available
+        for col in CORPUS_COLS:
+            if col in row.index:
+                entry[col] = row[col]
+
         entry["doc_index"] = idx
         rows.append(entry)
 
     result = pd.DataFrame(rows).set_index("doc_index")
     result.to_parquet(out)
     log.info(f"✓ Full output saved: {len(result)} rows → {out}")
+    if "text_clean" in result.columns:
+        log.info(f"  text_clean column present ✓ ({result['text_clean'].notna().sum()} non-null)")
+    else:
+        log.warning("  text_clean column MISSING — script 21 will fail")
 
 
 if __name__ == "__main__":
