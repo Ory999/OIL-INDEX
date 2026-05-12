@@ -34,6 +34,15 @@ jobs:
         uses: actions/checkout@v4.2.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      # Pull latest commits so master_with_nlp.parquet from the
+      # qualitative pipeline is available before econometric scripts run
+      - name: Pull latest data from qualitative pipeline
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main || true
 
       - name: Install dependencies
         run: |
@@ -52,7 +61,21 @@ jobs:
             echo "   Falling back to quantitative-only master dataset"
             cp data/features/master_quant.parquet data/features/master_with_nlp.parquet || true
           else
-            echo "✅ NLP scores found — running full combined Granger test"
+            python3 - <<'EOF'
+          import pandas as pd
+          df = pd.read_parquet("data/features/master_with_nlp.parquet")
+          nlp_cols = [c for c in df.columns if any(x in c for x in
+                      ["sent_", "oil_impact", "divergence", "topic_",
+                       "finbert", "supply_disruption", "geopolitical",
+                       "demand_outlook", "institutional_confidence"])]
+          if nlp_cols:
+              print(f"✅ NLP scores found — {len(nlp_cols)} NLP columns in master dataset")
+              print(f"   Sample: {nlp_cols[:5]}")
+          else:
+              print("⚠️  master_with_nlp.parquet exists but contains NO NLP columns")
+              print("   Qualitative pipeline may not have merged scores yet")
+          print(f"   Total columns: {len(df.columns)}  |  Rows: {len(df)}")
+          EOF
           fi
 
       - name: Stationarity tests
