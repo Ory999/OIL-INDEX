@@ -271,17 +271,17 @@ def save_incremental(records: list, out: Path, already_scored_df: pd.DataFrame |
 
 
 def run_llm_scoring():
-    finbert_path = RAW_DIR / "finbert_scores.parquet"
-    out          = RAW_DIR / "llm_scores.parquet"
+    corpus_path = RAW_DIR / "combined_corpus.parquet"
+    out         = RAW_DIR / "llm_scores.parquet"
 
-    if not finbert_path.exists():
-        log.warning("finbert_scores.parquet not found — run 19 finbert scoring.py first")
+    if not corpus_path.exists():
+        log.warning("combined_corpus.parquet not found — run 18 build corpus.py first")
         return pd.DataFrame()
 
-    corpus = pd.read_parquet(finbert_path)
-    if len(corpus) == 0:
-        log.warning("FinBERT corpus empty — skipping LLM scoring")
-        return pd.DataFrame()
+    corpus = pd.read_parquet(corpus_path)
+        if len(corpus) == 0:
+            log.warning("combined_corpus.parquet is empty — run 18 build corpus.py first")
+            return pd.DataFrame()
 
     corpus["date"] = pd.to_datetime(corpus["date"]).dt.tz_localize(None).dt.normalize()
 
