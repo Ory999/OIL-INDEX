@@ -345,8 +345,10 @@ def build_full_index():
     latest_fresh     = bool(latest_row["nlp_is_fresh"])
 
     # Count active signals in last 30 days for cadence reporting
-    recent = result.last("30D")
-    signals_30d     = int(recent["signal_active"].sum())
+    # Note: .last() was removed in pandas 2.x — use boolean date filter instead
+    cutoff_30d  = result.index.max() - pd.Timedelta(days=30)
+    recent      = result[result.index >= cutoff_30d]
+    signals_30d = int(recent["signal_active"].sum())
     signals_30d_correct = None   # accuracy requires outcome data — not available here
 
     tier_acc = TIER_ACCURACY.get(latest_tier, {})
