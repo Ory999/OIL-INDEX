@@ -497,12 +497,27 @@ with tab_live:
               <div class='stat-sub'>top 10% firings</div>
             </div>""", unsafe_allow_html=True)
 
-    # ── Recent 90-day chart ───────────────────────────────────────────
-    st.markdown("<div class='section-header'>Last 90 Days</div>", unsafe_allow_html=True)
+    # ── Index history chart with range selector ──────────────────────
+    st.markdown("<div class='section-header'>Index History</div>", unsafe_allow_html=True)
 
     if df is not None:
-        recent = df.last("90D") if hasattr(df, "last") else \
-                 df[df.index >= df.index.max() - pd.Timedelta(days=90)]
+        # Range selector — default to full history to show context back to 2008
+        range_col1, range_col2 = st.columns([3, 1])
+        with range_col2:
+            time_range = st.selectbox(
+                "Range", ["3M", "1Y", "3Y", "5Y", "All (2007–)"],
+                index=4,   # default: full history
+                label_visibility="collapsed",
+            )
+        range_days = {
+            "3M":          90,
+            "1Y":          365,
+            "3Y":          365 * 3,
+            "5Y":          365 * 5,
+            "All (2007–)": 99999,
+        }[time_range]
+        cutoff = df.index.max() - pd.Timedelta(days=range_days)
+        recent = df[df.index >= cutoff]
 
         fig = make_subplots(
             rows=2, cols=1,
