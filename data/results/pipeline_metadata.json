@@ -70,7 +70,7 @@
   "full_index_complete": true,
   "nlp_scores_used": true,
   "n_stable_features_used": 9,
-  "full_run_timestamp": "2026-05-14T14:32:20.513819",
+  "full_run_timestamp": "2026-05-14T17:47:12.166447",
   "index_method": "rolling_percentile_ema63_stable9_contrarian",
   "validated_oos_accuracy": "86.8% top-10% OOS (21d horizon, 5 independent blocks)"
 }
