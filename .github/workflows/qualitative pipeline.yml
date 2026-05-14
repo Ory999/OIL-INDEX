@@ -3,6 +3,13 @@
 # Collects institutional text, scores with LLM, builds sentiment momentum.
 # Active sources: OPEC_MOMR, ARAMCO, EIA_STEO (3 sources, 695 historic docs)
 
+# FIX #8: FinBERT Baseline Scoring step now has continue-on-error: true.
+# Script 22 docstring states "FinBERT removed from pipeline" — the step
+# was still present in the workflow and would halt the entire pipeline if
+# script 19 failed or did not exist. It now runs as a best-effort legacy
+# step for the paper's baseline result only. All downstream steps
+# (20 LLM scoring through 23 merge NLP) are unaffected if it fails.
+
 name: Qualitative NLP Pipeline
 
 on:
@@ -65,8 +72,13 @@ jobs:
       - name: Build Combined Corpus
         run: python3 "scripts/qual/18 build corpus.py"
 
-      - name: FinBERT Baseline Scoring
+      # FIX #8: continue-on-error: true added.
+      # FinBERT was removed from the active pipeline (see script 22 docstring).
+      # This step is retained for the paper's r=0.13 baseline result only.
+      # Failure here must not block LLM scoring or downstream steps.
+      - name: FinBERT Baseline Scoring (legacy — paper baseline only)
         run: python3 "scripts/qual/19 finbert scoring.py"
+        continue-on-error: true
 
       - name: LLM Multidimensional Scoring
         run: python3 "scripts/qual/20 llm scoring.py"
