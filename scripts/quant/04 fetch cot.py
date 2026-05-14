@@ -7,6 +7,16 @@ NOTE: Fix applied from notebook diagnostic output.
 The disaggregated COT report uses M_Money_Positions_Long_All /
 M_Money_Positions_Short_All for managed money (speculators),
 NOT NonComm_Positions_Long_All which is the legacy report column.
+
+FIXES APPLIED:
+  FIX #2: NameError — 'df' was referenced before assignment inside the
+          cache-check try block. Replaced with 'existing' (the variable
+          that actually holds the loaded parquet at that point).
+  FIX #9: range(START_YEAR, latest_year) silently excluded the most
+          recent complete year from the cache, causing it to re-download
+          on every run. Changed to range(START_YEAR, latest_year + 1)
+          then explicitly discard current_year so only the current year
+          (which updates weekly) is always re-fetched.
 """
 import os, io, logging, zipfile, requests
 from pathlib import Path
@@ -21,18 +31,14 @@ START_YEAR = int(os.getenv("START_DATE", "2007-01-01")[:4])
 RAW_DIR    = Path(os.getenv("DATA_DIR", "data/raw"))
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-# Correct column names for CFTC disaggregated futures report
-# Confirmed from actual notebook output showing available columns
-LONG_COL  = "M_Money_Positions_Long_All"   # Managed money longs
-SHORT_COL = "M_Money_Positions_Short_All"  # Managed money shorts
-DATE_COL  = "As_of_Date_In_Form_YYMMDD"
+LONG_COL   = "M_Money_Positions_Long_All"
+SHORT_COL  = "M_Money_Positions_Short_All"
+DATE_COL   = "As_of_Date_In_Form_YYMMDD"
 MARKET_COL = "Market_and_Exchange_Names"
 
 
 def download_cot_year(year: int) -> pd.DataFrame | None:
-    """Download one year of CFTC disaggregated COT data."""
     current_year = datetime.now().year
-
     if year == current_year:
         url = "https://www.cftc.gov/dea/newcot/fut_disagg_txt.zip"
     else:
@@ -54,23 +60,32 @@ def download_cot_year(year: int) -> pd.DataFrame | None:
 def fetch_cot_data():
     out = RAW_DIR / "cot_crude.parquet"
 
-    # Check if we have recent cached data — only download missing years
+    current_year = datetime.now().year
+
+    # ── Check cache and determine which years to fetch ────────────────────
     existing_years = set()
+    existing       = None
+
     if out.exists():
         try:
             existing = pd.read_parquet(out)
             existing.index = pd.to_datetime(existing.index)
             latest_year = existing.index.max().year
-            # Always re-fetch current year (it updates weekly)
-            existing_years = set(range(START_YEAR, latest_year))
-            if len(df) > 0 and "cot_net_long" in df.columns:
-                log.info(f"  Latest net long: {df['cot_net_long'].iloc[-1]:,.0f} contracts")
-        except Exception:
-            existing = None
-    else:
-        existing = None
 
-    current_year = datetime.now().year
+            # FIX #9: use latest_year + 1 so complete years are not re-fetched.
+            # Then discard current_year so it is always re-downloaded (COT is weekly).
+            existing_years = set(range(START_YEAR, latest_year + 1))
+            existing_years.discard(current_year)
+
+            # FIX #2: was `if len(df) > 0` — df not defined here, must be existing
+            if len(existing) > 0 and "cot_net_long" in existing.columns:
+                log.info(f"  Cached COT data: {len(existing)} rows, "
+                         f"latest: {existing.index.max().date()}")
+                log.info(f"  Latest net long: {existing['cot_net_long'].iloc[-1]:,.0f} contracts")
+        except Exception as e:
+            log.warning(f"  Could not load cached COT data: {e}")
+            existing = None
+
     years_to_fetch = [y for y in range(START_YEAR, current_year + 1)
                       if y not in existing_years]
 
@@ -82,7 +97,6 @@ def fetch_cot_data():
         if df_year is None:
             continue
 
-        # Filter to WTI crude oil (NYMEX)
         crude = df_year[
             df_year[MARKET_COL].str.contains("CRUDE OIL", case=False, na=False)
         ].copy()
@@ -91,14 +105,11 @@ def fetch_cot_data():
             log.debug(f"  No crude oil rows for {year}")
             continue
 
-        # Parse date
         crude["report_date"] = pd.to_datetime(
             crude[DATE_COL].astype(str), format="%y%m%d", errors="coerce"
         )
         crude = crude.dropna(subset=["report_date"])
 
-        # Extract managed money positioning
-        # These are the speculative traders (hedge funds, CTAs)
         if LONG_COL in crude.columns and SHORT_COL in crude.columns:
             crude["cot_net_long"] = (
                 crude[LONG_COL].astype(float)
@@ -135,7 +146,7 @@ def fetch_cot_data():
         df.to_parquet(out)
         return df
 
-    # Combine new data with existing cache
+    # ── Combine new data with existing cache ──────────────────────────────
     new_parts = []
     if cot_dfs:
         new_df = pd.concat(cot_dfs, ignore_index=True)
@@ -153,14 +164,12 @@ def fetch_cot_data():
         .drop_duplicates()
     )
 
-    # Resample to business day frequency
     df = combined.resample("B").ffill(limit=5)
 
     df.to_parquet(out)
     log.info(f"✓ COT data saved → {out}  ({len(df)} rows)")
-    log.info(
-        f"  Latest net long: {df['cot_net_long'].iloc[-1]:,.0f} contracts"
-    )
+    if len(df) > 0 and "cot_net_long" in df.columns:
+        log.info(f"  Latest net long: {df['cot_net_long'].iloc[-1]:,.0f} contracts")
     return df
 
 
