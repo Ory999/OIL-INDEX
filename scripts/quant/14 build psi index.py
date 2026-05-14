@@ -49,11 +49,15 @@ NORM_WINDOW = 252
 EMA_SMOOTH  = 63
 
 COMPONENT_WEIGHTS = {
-    "rsi_7":        1.0,
-    "dev_ma14":     1.0,
-    "dev_ma30":     1.0,
-    "dev_ma60":     1.0,
-    "signed_vol":   1.0,
+    "rsi_7":           1.0,   # short-term overbought/oversold
+    "dev_ma14":        1.0,   # 2-week deviation
+    "dev_ma30":        1.0,   # monthly deviation
+    "dev_ma60":        1.0,   # quarterly deviation
+    "signed_vol":      1.0,   # spike regime direction
+    "price_long_rank": 1.5,   # long-term price level in historical context
+                               # higher weight: most structurally important component
+                               # At $111 (~2x the 2007-2026 average of ~$50), this
+                               # should push PSI significantly higher than MA-only approaches
 }
 
 
@@ -137,6 +141,19 @@ def build_psi():
     signed_vol  = vol_ratio * np.sign(ret_5d)
     components["signed_vol"] = rolling_percentile(signed_vol)
 
+    # ── Component 6: Long-term price level rank ───────────────────────────
+    # Rolling percentile over 2500 trading days (~10 years).
+    # Answers: "Is current price historically expensive?"
+    # At $111 (near 2008 highs, ~2x long-run average): rank ≈ 0.85-0.90
+    # At $20 (COVID 2020): rank ≈ 0.02
+    # Justification: Grossman-Stiglitz (1980) — if price deviates far from
+    # long-run fundamental value, information asymmetry with institutions
+    # who have multi-decade price context is most likely.
+    LONG_WINDOW = min(2500, int(len(price) * 0.8))  # adaptive: up to 10 years
+    components["price_long_rank"] = rolling_percentile(price, window=LONG_WINDOW)
+    log.info(f"  Long-term price rank window: {LONG_WINDOW} days "
+             f"({LONG_WINDOW/252:.1f} years)")
+
     # ── Weighted composite ────────────────────────────────────────────────
     raw_score = pd.Series(0.0, index=price.index)
     total_w   = 0.0
@@ -163,7 +180,8 @@ def build_psi():
         "comp_dev_ma14":components.get("dev_ma14", pd.Series(np.nan, index=price.index)),
         "comp_dev_ma30":components.get("dev_ma30", pd.Series(np.nan, index=price.index)),
         "comp_dev_ma60":components.get("dev_ma60", pd.Series(np.nan, index=price.index)),
-        "comp_signed_vol":components.get("signed_vol", pd.Series(np.nan, index=price.index)),
+        "comp_signed_vol":    components.get("signed_vol",       pd.Series(np.nan, index=price.index)),
+        "comp_price_long":    components.get("price_long_rank", pd.Series(np.nan, index=price.index)),
         "oil_price":    price,
         "rsi_raw":      rsi_raw,
         "vol_ratio":    vol_ratio,
