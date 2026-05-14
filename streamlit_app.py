@@ -208,9 +208,8 @@ PLOT_LAYOUT = dict(
     plot_bgcolor="rgba(0,0,0,0)",
     font=dict(family="DM Mono, monospace", color="#9ca3af", size=11),
     margin=dict(l=0, r=0, t=30, b=0),
-    xaxis=dict(gridcolor="#1f2937", zeroline=False),
-    yaxis=dict(gridcolor="#1f2937", zeroline=False),
 )
+AXIS_STYLE = dict(gridcolor="#1f2937", zeroline=False)
 
 # ── Data loading ──────────────────────────────────────────────────────────────
 @st.cache_data(ttl=1800)  # refresh cache every 30 minutes
@@ -486,11 +485,10 @@ with tab_live:
                 x=1, y=1,
                 xanchor="right",
             ),
-            yaxis=dict(range=[0, 100], gridcolor="#1f2937",
-                       tickfont=dict(size=10)),
-            yaxis2=dict(range=[0, 0.55], gridcolor="#1f2937",
-                        tickfont=dict(size=10), title="Severity"),
         )
+        fig.update_xaxes(**AXIS_STYLE)
+        fig.update_yaxes(row=1, col=1, range=[0, 100], **AXIS_STYLE, tickfont=dict(size=10))
+        fig.update_yaxes(row=2, col=1, range=[0, 0.55], **AXIS_STYLE, tickfont=dict(size=10), title_text="Severity")
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
@@ -510,14 +508,31 @@ with tab_history:
             subplot_titles=["WTI Oil Price (USD)", "PRCSI Fear & Greed", "Signal Severity"],
         )
 
-        # WTI price
+        # WTI price + moving averages
         if "oil_price" in df.columns:
+            price = df["oil_price"].ffill()
             fig2.add_trace(go.Scatter(
-                x=df.index, y=df["oil_price"].fillna(method="ffill"),
+                x=df.index, y=price,
                 mode="lines", name="WTI",
-                line=dict(color="#f97316", width=1.2),
+                line=dict(color="#f97316", width=1.4),
                 hovertemplate="%{x|%Y-%m-%d}<br>$%{y:.2f}<extra></extra>",
             ), row=1, col=1)
+            # Moving averages — shorter = lighter, longer = more opaque
+            ma_configs = [
+                (7,  "MA7",  "#fbbf24", 0.5, "dot"),
+                (14, "MA14", "#fb923c", 0.65, "dash"),
+                (30, "MA30", "#f87171", 0.8, "dashdot"),
+                (60, "MA60", "#e11d48", 1.0, "solid"),
+            ]
+            for window, name, color, opacity, dash in ma_configs:
+                ma = price.rolling(window, min_periods=int(window*0.5)).mean()
+                fig2.add_trace(go.Scatter(
+                    x=df.index, y=ma,
+                    mode="lines", name=name,
+                    line=dict(color=color, width=1.0, dash=dash),
+                    opacity=opacity,
+                    hovertemplate=f"%{{x|%Y-%m-%d}}<br>{name}: $%{{y:.2f}}<extra></extra>",
+                ), row=1, col=1)
 
         # PRCSI bands
         for y0, y1, clr in [(0,25,"#0d1f5c"),(25,45,"#1e3f8a"),(45,55,"#1f2937"),
@@ -568,10 +583,11 @@ with tab_history:
             showlegend=True,
             legend=dict(font=dict(size=10, color="#9ca3af"),
                         bgcolor="rgba(0,0,0,0)"),
-            yaxis=dict(gridcolor="#1f2937"),
-            yaxis2=dict(range=[0, 100], gridcolor="#1f2937"),
-            yaxis3=dict(range=[0, 0.55], gridcolor="#1f2937"),
         )
+        fig2.update_xaxes(**AXIS_STYLE)
+        fig2.update_yaxes(row=1, col=1, **AXIS_STYLE)
+        fig2.update_yaxes(row=2, col=1, range=[0, 100], **AXIS_STYLE)
+        fig2.update_yaxes(row=3, col=1, range=[0, 0.55], **AXIS_STYLE)
         st.plotly_chart(fig2, use_container_width=True,
                         config={"displayModeBar": True, "scrollZoom": True})
 
@@ -597,9 +613,9 @@ with tab_history:
             height=220,
             bargap=0.02,
             showlegend=False,
-            xaxis=dict(title="PRCSI Score", range=[0,100], gridcolor="#1f2937"),
-            yaxis=dict(title="Days", gridcolor="#1f2937"),
         )
+        fig3.update_xaxes(title_text="PRCSI Score", range=[0,100], **AXIS_STYLE)
+        fig3.update_yaxes(title_text="Days", **AXIS_STYLE)
         st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
 
 
@@ -668,9 +684,9 @@ with tab_signals:
             fig4.update_layout(
                 **PLOT_LAYOUT, barmode="stack", height=220,
                 legend=dict(font=dict(size=10), bgcolor="rgba(0,0,0,0)"),
-                xaxis=dict(title="Year", gridcolor="#1f2937"),
-                yaxis=dict(title="Signal days", gridcolor="#1f2937"),
             )
+            fig4.update_xaxes(title_text="Year", **AXIS_STYLE)
+            fig4.update_yaxes(title_text="Signal days", **AXIS_STYLE)
             st.plotly_chart(fig4, use_container_width=True,
                             config={"displayModeBar": False})
 
