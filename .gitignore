@@ -28,8 +28,16 @@ data/features/*.parquet
 !data/features/master_quant.parquet
 !data/features/master_with_nlp.parquet
 
-# Keep results CSVs and JSONs (small, useful to track in git)
-# data/results/ is NOT ignored — pipeline metadata and scores are committed
+# Historic data directory — large binary files, not needed for public repo.
+# Pipeline uses data/Historic/ locally only. Exclude to keep repo size small.
+# The pipeline falls back gracefully when Historic/ is absent.
+data/Historic/
+
+# Local tooling config — LM Studio preset, not needed for running the pipeline
+Semesterprojekt.preset.json
+
+# Keep results CSVs, JSONs and PNGs (small, useful to track in git)
+# data/results/ is NOT ignored — pipeline metadata and index output are committed
 
 # Python cache
 __pycache__/
@@ -40,3 +48,6 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Jupyter
+*.ipynb
