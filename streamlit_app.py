@@ -230,6 +230,17 @@ def load_index() -> pd.DataFrame | None:
 meta = load_metadata()
 df   = load_index()
 
+@st.cache_data(ttl=1800)
+def load_psi() -> pd.DataFrame | None:
+    path = RESULTS_DIR / "psi_final.parquet"
+    if not path.exists():
+        return None
+    d = pd.read_parquet(path)
+    d.index = pd.to_datetime(d.index)
+    return d
+
+psi_df = load_psi()
+
 # ── Derive current state ──────────────────────────────────────────────────────
 score      = meta.get("prcsi_latest", 50.0)
 severity   = meta.get("prcsi_severity", 0.0)
@@ -245,6 +256,16 @@ prcsi_date = meta.get("prcsi_date", "")
 
 color      = score_color(score)
 regime     = regime_label(score)
+
+# PSI state
+psi_score  = meta.get("psi_latest", 50.0)
+psi_regime = meta.get("psi_regime", "NEUTRAL")
+psi_rsi    = meta.get("psi_rsi_7")
+divergence     = meta.get("divergence", 0.0) or 0.0
+divergence_pct = meta.get("divergence_pct_pts", 0.0) or 0.0
+div_direction  = meta.get("divergence_direction", "ALIGNED")
+psi_color  = score_color(psi_score)
+psi_label  = regime_label(psi_score)
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
 col_title, col_meta = st.columns([3, 1])
@@ -277,24 +298,20 @@ tab_live, tab_history, tab_signals, tab_method = st.tabs([
 # ════════════════════════════════════════════════
 with tab_live:
 
-    # ── Gauge + Score ─────────────────────────────────────────────────
-    col_gauge, col_right = st.columns([1.1, 1])
+    # ── Three-column layout: PRCSI | Divergence | PSI ──────────────────
+    col_prcsi, col_div, col_psi = st.columns([1, 0.7, 1])
 
-    with col_gauge:
-        gauge_fig = go.Figure(go.Indicator(
+    def make_gauge(value, color, height=240):
+        fig = go.Figure(go.Indicator(
             mode="gauge+number",
-            value=score,
-            number={
-                "font": {"size": 72, "color": color, "family": "DM Mono, monospace"},
-                "suffix": "",
-            },
+            value=value,
+            number={"font": {"size": 56, "color": color, "family": "DM Mono, monospace"}},
             gauge={
                 "axis": {
                     "range": [0, 100],
                     "tickwidth": 1,
-                    "tickfont": {"size": 10, "color": "#6b7280"},
-                    "tickvals": [0, 25, 45, 55, 75, 100],
-                    "ticktext": ["0", "25", "45", "55", "75", "100"],
+                    "tickfont": {"size": 9, "color": "#6b7280"},
+                    "tickvals": [0, 25, 55, 75, 100],
                 },
                 "bar": {"color": color, "thickness": 0.28},
                 "bgcolor": "rgba(0,0,0,0)",
@@ -307,26 +324,93 @@ with tab_live:
                     {"range": [75, 100], "color": "#450a0a"},
                 ],
                 "threshold": {
-                    "line": {"color": "#f9fafb", "width": 3},
-                    "thickness": 0.85,
-                    "value": score,
+                    "line": {"color": "#f9fafb", "width": 2},
+                    "thickness": 0.85, "value": value,
                 },
             },
         ))
-        gauge_fig.update_layout(
+        fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="DM Mono, monospace", color="#9ca3af"),
-            margin=dict(l=20, r=20, t=10, b=0),
-            height=280,
+            margin=dict(l=10, r=10, t=5, b=0),
+            height=height,
         )
-        st.plotly_chart(gauge_fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(
-            f"<div class='regime-label' style='color:{color};'>{regime}</div>",
-            unsafe_allow_html=True
-        )
+        return fig
 
-    with col_right:
+    with col_prcsi:
+        st.markdown("<div style='text-align:center; font-family:DM Mono; font-size:0.7rem; "
+                    "letter-spacing:0.15em; opacity:0.4; text-transform:uppercase; "
+                    "margin-bottom:0.3rem;'>PRCSI — Institutional</div>",
+                    unsafe_allow_html=True)
+        st.plotly_chart(make_gauge(score, color),
+                        use_container_width=True, config={"displayModeBar": False})
+        st.markdown(f"<div class='regime-label' style='color:{color};'>{regime}</div>",
+                    unsafe_allow_html=True)
+
+    with col_div:
+        st.markdown("<div style='text-align:center; font-family:DM Mono; font-size:0.7rem; "
+                    "letter-spacing:0.15em; opacity:0.4; text-transform:uppercase; "
+                    "margin-bottom:0.3rem;'>Divergence</div>",
+                    unsafe_allow_html=True)
+        # Divergence visual
+        div_color = ("#dc2626" if div_direction == "PSI_LEADS"
+                     else "#3b82f6" if div_direction == "PRCSI_LEADS"
+                     else "#6b7280")
+        div_sign  = "▲" if divergence_pct > 0 else "▼"
+        div_label = {
+            "PSI_LEADS":   "Price Ahead",
+            "PRCSI_LEADS": "Narrative Ahead",
+            "ALIGNED":     "Aligned",
+        }.get(div_direction, "Aligned")
+
+        st.markdown(f"""
+        <div style='text-align:center; padding:1.5rem 0.5rem;'>
+          <div style='font-family:DM Mono; font-size:2.4rem; font-weight:500;
+                      color:{div_color}; line-height:1;'>
+            {div_sign} {abs(divergence_pct):.1f}
+          </div>
+          <div style='font-family:DM Sans; font-size:0.75rem; opacity:0.6;
+                      margin-top:0.4rem;'>points</div>
+          <div style='font-family:DM Mono; font-size:0.7rem; color:{div_color};
+                      letter-spacing:0.1em; text-transform:uppercase;
+                      margin-top:0.6rem;'>{div_label}</div>
+          <div style='font-family:DM Mono; font-size:0.62rem; opacity:0.4;
+                      margin-top:0.8rem; line-height:1.6;'>
+            PRCSI&nbsp;{score:.1f}<br>
+            PSI&nbsp;&nbsp;&nbsp;&nbsp;{psi_score:.1f}
+          </div>
+        </div>
+        <div style='font-family:DM Mono; font-size:0.62rem; opacity:0.35;
+                    text-align:center; padding:0 0.5rem; line-height:1.6;'>
+          {"⚡ Price running ahead of institutional narrative" if div_direction=="PSI_LEADS"
+           else "📣 Narrative ahead of price" if div_direction=="PRCSI_LEADS"
+           else "Institutional narrative and price aligned"}
+        </div>""", unsafe_allow_html=True)
+
+    with col_psi:
+        st.markdown("<div style='text-align:center; font-family:DM Mono; font-size:0.7rem; "
+                    "letter-spacing:0.15em; opacity:0.4; text-transform:uppercase; "
+                    "margin-bottom:0.3rem;'>PSI — Price Action</div>",
+                    unsafe_allow_html=True)
+        psi_available = psi_df is not None and len(psi_df) > 0
+        st.plotly_chart(make_gauge(psi_score if psi_available else 50.0,
+                                   psi_color if psi_available else "#6b7280"),
+                        use_container_width=True, config={"displayModeBar": False})
+        st.markdown(f"<div class='regime-label' style='color:{psi_color};'>{psi_label}</div>",
+                    unsafe_allow_html=True)
+        if psi_rsi is not None:
+            st.markdown(f"<div style='text-align:center; font-family:DM Mono; "
+                        f"font-size:0.68rem; opacity:0.45; margin-top:0.3rem;'>"
+                        f"RSI(7): {psi_rsi:.0f}</div>",
+                        unsafe_allow_html=True)
+
+    with col_prcsi:
+        pass  # signal box goes below in new layout
+
+    # ── Signal + Stats below gauges ────────────────────────────────────
+    col_right_sig, col_right_stats = st.columns([1, 1])
+    with col_right_sig:
         # ── Signal status ─────────────────────────────────────────────
         st.markdown("<div class='section-header'>Active Signal</div>",
                     unsafe_allow_html=True)
@@ -439,6 +523,16 @@ with tab_live:
             line=dict(color="#f9fafb", width=2),
             hovertemplate="%{x|%Y-%m-%d}<br>Score: %{y:.1f}<extra></extra>",
         ), row=1, col=1)
+        # PSI overlay
+        if psi_df is not None:
+            psi_recent = psi_df[psi_df.index >= recent.index.min()]
+            if len(psi_recent):
+                fig.add_trace(go.Scatter(
+                    x=psi_recent.index, y=psi_recent["psi"],
+                    mode="lines", name="PSI",
+                    line=dict(color="#f97316", width=1.5, dash="dot"),
+                    hovertemplate="%{x|%Y-%m-%d}<br>PSI: %{y:.1f}<extra></extra>",
+                ), row=1, col=1)
 
         # Signal markers
         bears = recent[recent["signal_direction"] == "BEARISH"]
@@ -546,6 +640,22 @@ with tab_history:
             line=dict(color="#f9fafb", width=1.4),
             hovertemplate="%{x|%Y-%m-%d}<br>%{y:.1f}<extra></extra>",
         ), row=2, col=1)
+        if psi_df is not None and len(psi_df):
+            fig2.add_trace(go.Scatter(
+                x=psi_df.index, y=psi_df["psi"],
+                mode="lines", name="PSI",
+                line=dict(color="#f97316", width=1.2, dash="dot"),
+                opacity=0.8,
+                hovertemplate="%{x|%Y-%m-%d}<br>PSI: %{y:.1f}<extra></extra>",
+            ), row=2, col=1)
+        if psi_df is not None and len(psi_df):
+            fig2.add_trace(go.Scatter(
+                x=psi_df.index, y=psi_df["psi"],
+                mode="lines", name="PSI",
+                line=dict(color="#f97316", width=1.2, dash="dot"),
+                opacity=0.8,
+                hovertemplate="%{x|%Y-%m-%d}<br>PSI: %{y:.1f}<extra></extra>",
+            ), row=2, col=1)
 
         # Signal markers on main chart
         for direction, sym, clr in [("BEARISH","triangle-down","#f87171"),
