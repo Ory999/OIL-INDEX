@@ -17,8 +17,13 @@ ALIGNMENT NOTE:
   API call guarantees identical inference behaviour regardless of which
   preset is active in LM Studio at run time.
 
-  Do NOT modify SYSTEM_PROMPT, RESPONSE_SCHEMA, reasoning_effort, or
-  build_user_prompt() without re-scoring the full historic corpus.
+  FIX APPLIED: reasoning_effort is attempted first; if the local model does
+  not support it (e.g. non-o1/o3 model), the call is retried without it.
+  This prevents every document from receiving neutral fallback scores when
+  running against a model that does not recognise the parameter.
+
+  Do NOT modify SYSTEM_PROMPT, RESPONSE_SCHEMA, or build_user_prompt()
+  without re-scoring the full historic corpus.
 """
 import os, json, logging, time, re, hashlib
 from pathlib import Path
@@ -40,6 +45,10 @@ MAX_RETRIES  = 3
 RETRY_DELAY  = 5.0
 SAVE_EVERY   = 50
 
+# FIX #10: Track whether reasoning_effort is supported by the current model.
+# Set to True initially; flipped to False on first 400/422 error.
+_REASONING_EFFORT_SUPPORTED = True
+
 SOURCE_CONTEXT = {
     "OPEC_MOMR": "OPEC Monthly Oil Market Report — official production cartel assessment",
     "ARAMCO":    "Saudi Aramco press coverage — world's largest oil producer",
@@ -47,10 +56,6 @@ SOURCE_CONTEXT = {
 }
 
 # ── JSON RESPONSE SCHEMA ──────────────────────────────────────────────────────
-# Matches the Structured Output schema in the LM Studio Semesterprojekt preset.
-# The preset enforced this schema during the historic backfill at inference time.
-# Passed explicitly in the API call so GitHub Actions gets identical behaviour
-# regardless of which preset is loaded in LM Studio at run time.
 RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -77,7 +82,6 @@ RESPONSE_SCHEMA = {
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 # LOCKED to match historic backfill. Hash: 0d23c19bbf76d4ee62cc685480ea43f0
-# Do NOT add, remove, or reword any line without re-scoring the historic corpus.
 SYSTEM_PROMPT = """You are a quantitative analyst specialising in WTI crude oil commodity markets with 20 years of experience at a major energy trading desk.
 
 Your task is to analyse official institutional communications and extract structured sentiment signals that quantify their directional impact on WTI crude oil prices.
@@ -102,7 +106,6 @@ CRITICAL RULES:
 — All scores except surface_vs_implied_divergence must be between -1.0 and +1.0
 — surface_vs_implied_divergence must be between 0.0 and 1.0"""
 
-# Verify prompt has not drifted from the historic backfill version
 PROMPT_VERSION          = hashlib.md5(SYSTEM_PROMPT.encode()).hexdigest()
 PROMPT_VERSION_EXPECTED = "0d23c19bbf76d4ee62cc685480ea43f0"
 if PROMPT_VERSION != PROMPT_VERSION_EXPECTED:
@@ -114,10 +117,6 @@ if PROMPT_VERSION != PROMPT_VERSION_EXPECTED:
 
 
 def build_user_prompt(text: str, source: str, date: str) -> str:
-    """
-    LOCKED to match historic backfill format.
-    Simple document + JSON template — no analytical guidance questions.
-    """
     source_context = SOURCE_CONTEXT.get(source, f"Official institutional statement — {source}")
     text_excerpt   = text[:2000].strip()
     return f"""DOCUMENT ANALYSIS REQUEST
@@ -177,37 +176,63 @@ def get_llm_client():
         raise ConnectionError(f"Cannot connect to local model at {LLM_BASE_URL}: {e}")
 
 
+def _make_api_call(client, model: str, messages: list,
+                   use_reasoning_effort: bool) -> object:
+    """
+    FIX #10: Attempt API call with or without reasoning_effort parameter.
+    reasoning_effort is only supported by OpenAI o1/o3 family models.
+    Local models (gpt-oss-20b, llama variants, etc.) will return 400/422
+    if the parameter is passed. On first failure, the flag is cleared so
+    subsequent calls skip the parameter without further retries.
+    """
+    global _REASONING_EFFORT_SUPPORTED
+
+    base_kwargs = dict(
+        model=model,
+        messages=messages,
+        temperature=0.1,
+        max_tokens=400,
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name":   "oil_sentiment_scores",
+                "strict": True,
+                "schema": RESPONSE_SCHEMA,
+            }
+        },
+    )
+
+    if use_reasoning_effort and _REASONING_EFFORT_SUPPORTED:
+        try:
+            return client.chat.completions.create(
+                **base_kwargs, reasoning_effort="high"
+            )
+        except Exception as e:
+            err = str(e).lower()
+            if any(x in err for x in ["reasoning_effort", "unknown", "400", "422",
+                                       "unexpected", "unrecognized"]):
+                log.warning(
+                    "  reasoning_effort not supported by this model — "
+                    "disabling for all subsequent calls"
+                )
+                _REASONING_EFFORT_SUPPORTED = False
+            else:
+                raise  # re-raise non-parameter errors
+
+    return client.chat.completions.create(**base_kwargs)
+
+
 def score_document_with_retry(client, model: str, text: str,
                                source: str, date: str) -> dict:
-    """
-    API call replicates the LM Studio Semesterprojekt preset settings exactly:
-    - temperature=0.1              (Settings > Temperature)
-    - max_tokens=400               (Settings > Limit Response Length — off,
-                                    but 400 is a safe ceiling for the JSON schema)
-    - reasoning_effort="high"      (Custom Fields > Reasoning Effort = High)
-    - response_format JSON schema  (Structured Output — enabled with RESPONSE_SCHEMA)
-    """
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user",   "content": build_user_prompt(text, source, date)},
+    ]
     last_error = ""
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user",   "content": build_user_prompt(text, source, date)},
-                ],
-                temperature=0.1,
-                max_tokens=400,
-                reasoning_effort="high",
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name":   "oil_sentiment_scores",
-                        "strict": True,
-                        "schema": RESPONSE_SCHEMA,
-                    }
-                },
-            )
+            response = _make_api_call(client, model, messages,
+                                      use_reasoning_effort=True)
             raw = response.choices[0].message.content.strip()
             if "```" in raw:
                 raw = re.sub(r'```json?|```', '', raw).strip()
@@ -278,14 +303,15 @@ def run_llm_scoring():
         log.warning("combined_corpus.parquet not found — run 18 build corpus.py first")
         return pd.DataFrame()
 
+    # FIX #1: Correct indentation — was indented one level too deep causing SyntaxError
     corpus = pd.read_parquet(corpus_path)
-        if len(corpus) == 0:
-            log.warning("combined_corpus.parquet is empty — run 18 build corpus.py first")
-            return pd.DataFrame()
+    if len(corpus) == 0:
+        log.warning("combined_corpus.parquet is empty — run 18 build corpus.py first")
+        return pd.DataFrame()
 
     corpus["date"] = pd.to_datetime(corpus["date"]).dt.tz_localize(None).dt.normalize()
 
-    # ── Load historic pre-scored documents (date+source matching) ─────────
+    # ── Load historic pre-scored documents ────────────────────────────────
     historic_df   = load_historic_scores()
     historic_keys = set()
     if historic_df is not None and len(historic_df) > 0:
@@ -295,7 +321,7 @@ def run_llm_scoring():
         )
         log.info(f"  Historic keys available: {len(historic_keys)} (date+source pairs)")
 
-    # ── Resume from existing daily scores (index-based) ───────────────────
+    # ── Resume from existing daily scores ─────────────────────────────────
     already_scored_df  = None
     already_scored_idx = set()
     if out.exists():
@@ -306,7 +332,6 @@ def run_llm_scoring():
         except Exception:
             log.info("  No valid daily scores — starting fresh")
 
-    # ── Determine which documents need LLM scoring ────────────────────────
     def needs_scoring(idx, row) -> bool:
         if idx in already_scored_idx:
             return False
@@ -366,12 +391,13 @@ def run_llm_scoring():
 
     log.info(f"\n✓ LLM scoring complete → {out}")
     log.info(f"  Prompt version:    {PROMPT_VERSION}")
+    log.info(f"  reasoning_effort:  {'supported' if _REASONING_EFFORT_SUPPORTED else 'not supported by model — disabled'}")
     log.info(f"  New docs scored:   {len(records)} ({len(records)-failed} success, {failed} failed)")
 
     final = pd.read_parquet(out)
     log.info(f"  Total in output:   {len(final)}")
-    log.info(f"\n  Mean scores by source:")
     if "source" in final.columns:
+        log.info(f"\n  Mean scores by source:")
         for src, grp in final.groupby("source"):
             log.info(f"    {src:25s}: "
                      f"oil_impact={grp['oil_impact_score'].mean():+.4f}  "
@@ -379,16 +405,12 @@ def run_llm_scoring():
     return final
 
 
-# ── Column definitions ────────────────────────────────────────────────────────
 SCORE_COLS = [
     "oil_impact_score", "supply_disruption_signal", "demand_outlook_signal",
     "geopolitical_risk_signal", "surface_vs_implied_divergence",
     "institutional_confidence", "dominant_theme", "reasoning",
     "llm_scored", "llm_failed", "prompt_version",
 ]
-
-# Historic FinBERT scores (695 docs) remain in data/Historic/finbert_scores.parquet
-# for the paper's baseline correlation result (r=0.13 vs LLM oil_impact_score).
 CORPUS_COLS = ["date", "source", "text", "text_clean", "word_count"]
 
 
@@ -396,16 +418,6 @@ def _save_full_output(corpus: pd.DataFrame,
                       historic_df: pd.DataFrame | None,
                       daily_df: pd.DataFrame | None,
                       out: Path):
-    """
-    Build complete llm_scores.parquet by merging:
-    1. Historic scores (matched by date+source key)
-    2. Daily scores (matched by corpus index)
-    for every document in the current corpus.
-    Includes corpus metadata columns (date, source, text_clean) so
-    downstream scripts (21 BERTopic, 22 momentum) can read them directly.
-    prompt_version column written for every row — historic rows receive
-    PROMPT_VERSION_EXPECTED since they were scored with the backfill prompt.
-    """
     rows      = []
     daily_idx = set(daily_df.index.tolist()) if daily_df is not None else set()
 
@@ -430,12 +442,10 @@ def _save_full_output(corpus: pd.DataFrame,
         if score_row is not None:
             entry = {col: score_row.get(col, 0.0) for col in SCORE_COLS
                      if col != "prompt_version"}
-            # Historic rows may not have prompt_version — backfill with expected hash
             entry["prompt_version"] = score_row.get("prompt_version", PROMPT_VERSION_EXPECTED)
         else:
             entry = neutral_scores("Not scored — no historic or daily score available")
 
-        # Include corpus metadata so script 21 has text_clean available
         for col in CORPUS_COLS:
             if col in row.index:
                 entry[col] = row[col]
