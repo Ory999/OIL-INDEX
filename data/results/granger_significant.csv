@@ -1,17 +1,19 @@
-feature,best_lag,f_stat,p_value,significant,direction,n_obs,group
-usd_logret,9,4.4725,7e-06,True,-,5046,Macro Controls
-fed_funds_rate_diff,9,3.4433,0.000306,True,+,5046,Macro Controls
-fed_funds_rate,10,3.1025,0.000597,True,-,5046,Macro Controls
-crude_stocks_change,4,4.6921,0.000885,True,+,5038,EIA Fundamentals
-refinery_util_pct,3,5.312,0.001182,True,-,5038,EIA Fundamentals
-crude_stocks_mbbl_diff,8,3.1737,0.001361,True,+,5038,EIA Fundamentals
-crude_stocks_mbbl,9,2.9487,0.0017,True,+,5038,EIA Fundamentals
-sent_accel,1,8.4808,0.003837,True,+,329,NLP Sentiment Momentum
-eia_surprise_norm,2,5.4711,0.004231,True,-,5038,EIA Fundamentals
-sent_roc_1d,1,7.1385,0.007925,True,+,329,NLP Sentiment Momentum
-sent_velocity,1,7.1385,0.007925,True,+,329,NLP Sentiment Momentum
-eia_surprise,4,3.4149,0.008523,True,+,5038,EIA Fundamentals
-sent_roc_7d,8,2.3888,0.016459,True,+,329,NLP Sentiment Momentum
-vix_logret,1,4.7161,0.029928,True,+,5046,Macro Controls
-sent_roc_14d,3,2.9567,0.03262,True,+,329,NLP Sentiment Momentum
-cot_net_long,1,3.9014,0.048321,True,+,3735,COT Positioning
+feature,best_lag,f_stat,p_value,significant,direction,n_obs,scope,group
+breakeven_10yr,7,6.2707,0.0,True,-,815,full_sample_descriptive,Macro Controls
+fed_funds_rate,7,5.0112,1.4e-05,True,-,815,full_sample_descriptive,Macro Controls
+fed_funds_rate_diff,10,3.5408,0.000135,True,-,815,full_sample_descriptive,Macro Controls
+crude_stocks_change,4,4.6885,0.000891,True,+,5041,full_sample_descriptive,EIA Fundamentals
+refinery_util_pct,3,5.3086,0.001188,True,-,5041,full_sample_descriptive,EIA Fundamentals
+crude_stocks_mbbl_diff,8,3.1675,0.001387,True,+,5041,full_sample_descriptive,EIA Fundamentals
+crude_stocks_mbbl,9,2.9332,0.001792,True,+,5041,full_sample_descriptive,EIA Fundamentals
+tips_10yr,7,3.171,0.00258,True,-,815,full_sample_descriptive,Macro Controls
+eia_surprise_norm,2,5.5563,0.003887,True,-,5041,full_sample_descriptive,EIA Fundamentals
+eia_surprise,4,3.436,0.008216,True,+,5041,full_sample_descriptive,EIA Fundamentals
+tips_10yr_diff,10,2.1772,0.01737,True,-,815,full_sample_descriptive,Macro Controls
+sent_roc_7d,1,5.4174,0.019977,True,+,5037,full_sample_descriptive,NLP Sentiment Momentum
+sent_ema_cross,1,4.8977,0.026937,True,+,5037,full_sample_descriptive,NLP Sentiment Momentum
+usd_logret,3,3.0756,0.026989,True,-,815,full_sample_descriptive,Macro Controls
+sent_rsi,1,4.6903,0.03038,True,+,5037,full_sample_descriptive,NLP Sentiment Momentum
+sent_roc_3d,6,2.1943,0.040656,True,+,5037,full_sample_descriptive,NLP Sentiment Momentum
+cot_net_long,1,3.9014,0.048321,True,+,3735,full_sample_descriptive,COT Positioning
+sent_ema_slow,2,3.0136,0.049204,True,+,5037,full_sample_descriptive,NLP Sentiment Momentum
