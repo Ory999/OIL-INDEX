@@ -1,8 +1,8 @@
 # ============================================================
 # PRCSI — Unified Requirements
-# Covers both quantitative and qualitative pipelines
+# Covers quantitative pipeline, qualitative pipeline, and Streamlit frontend
 # ============================================================
- 
+
 # ── Core data ────────────────────────────────────────────────
 yfinance==0.2.54
 pandas==2.2.3
@@ -12,14 +12,14 @@ python-dotenv==1.0.1
 pyarrow==17.0.0
 tqdm==4.67.1
 httpx==0.27.0
- 
+
 # ── Quantitative / econometrics ──────────────────────────────
 fredapi==0.5.2
 statsmodels==0.14.4
 scikit-learn==1.5.2
 shap==0.46.0
 scipy==1.13.1
- 
+
 # ── Qualitative / NLP ────────────────────────────────────────
 transformers==4.44.2
 torch==2.4.1
@@ -31,8 +31,11 @@ lxml==5.3.0
 feedparser==6.0.11
 anthropic==0.34.2
 openai==1.47.0
- 
+
 # ── Visualisation ─────────────────────────────────────────────
 matplotlib==3.9.2
 seaborn==0.13.2
- 
+
+# ── Streamlit frontend ────────────────────────────────────────
+streamlit==1.40.2
+plotly==5.24.1
