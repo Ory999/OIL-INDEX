@@ -2,13 +2,19 @@
 Script 09 — Granger Causality Tests
 Runs on master_with_nlp.parquet (full combined quant + NLP signal).
 
-This is the core test of the research question:
-"Does the COMPLETE PRCSI signal (fundamentals + rhetoric momentum)
- Granger-cause WTI crude oil price movements, beyond what past
- prices and fundamentals alone explain?"
+IMPORTANT — SCOPE NOTE (FIX #11):
+  These tests run on the FULL dataset (2007–present), including the OOS
+  period (2020–2026). Results are therefore DESCRIPTIVE of the full history
+  and are used for: (a) feature selection in the VAR model, (b) exploratory
+  understanding of which features have predictive content.
 
-Running Granger AFTER the qualitative pipeline means we test the
-full combined product — which is the actual research contribution.
+  Results from this script must NOT be used to compute feature weights for
+  the live PRCSI index. Index weights require train-period-only Granger
+  evidence (2007–2019 rolling windows, stored in data/Historic/).
+  See script 12 for how train-frozen weights are applied.
+
+  The granger_all_results.csv output carries a 'scope' column set to
+  'full_sample_descriptive' to make this explicit for downstream readers.
 """
 import os, logging
 from pathlib import Path
@@ -57,11 +63,12 @@ def run_granger_battery(df: pd.DataFrame, target: str, features: list) -> pd.Dat
                 "significant": best_p < SIGNIFICANCE,
                 "direction":   "+" if corr > 0 else "-",
                 "n_obs":       len(pair),
+                # FIX #11: label all results as full-sample descriptive
+                "scope":       "full_sample_descriptive",
             })
         except Exception as e:
             log.debug(f"  Granger failed for {feat}: {e}")
 
-    # FIX 1: guard against empty results when all features fail
     result_df = pd.DataFrame(results)
     if result_df.empty or "p_value" not in result_df.columns:
         return result_df
@@ -81,6 +88,15 @@ def run_granger_causality():
 
     has_nlp = any("sent_" in c or "nlp_" in c or "oil_impact" in c
                   for c in master.columns)
+
+    # FIX #11: emit clear scope warning
+    log.info("=" * 60)
+    log.info("SCOPE: Full-sample Granger (2007–present) — DESCRIPTIVE ONLY")
+    log.info("  Results include OOS period (2020–2026) — NOT train-frozen.")
+    log.info("  Use for VAR feature selection and exploratory analysis only.")
+    log.info("  Do NOT use granger_all_results.csv p-values as index weights.")
+    log.info("  Train-frozen weights come from data/Historic/ rolling windows.")
+    log.info("=" * 60)
     log.info(f"Testing: {'FULL combined signal (quant + NLP)' if has_nlp else 'quantitative only'}")
 
     feature_groups = {
@@ -117,7 +133,6 @@ def run_granger_causality():
         res = run_granger_battery(master, TARGET, available)
         all_results[group_name] = res
 
-        # FIX 2: guard against empty result before accessing 'significant' column
         if res.empty or "significant" not in res.columns:
             log.info(f"  Significant: 0 / {len(available)}")
             continue
@@ -128,14 +143,12 @@ def run_granger_causality():
             log.info(f"  Best: {sig.iloc[0]['feature']} "
                      f"(p={sig.iloc[0]['p_value']:.4f}, lag={sig.iloc[0]['best_lag']}d)")
 
-    # FIX 3: correct indentation on empty results guard
     if not all_results:
         log.warning("No features available for Granger testing — saving empty results")
         pd.DataFrame().to_csv(RESULTS_DIR / "granger_all_results.csv", index=False)
         pd.DataFrame().to_csv(RESULTS_DIR / "granger_significant.csv", index=False)
         return pd.DataFrame()
 
-    # Filter to non-empty results before concat
     non_empty = {k: v for k, v in all_results.items() if not v.empty}
     if not non_empty:
         log.warning("All Granger results were empty — saving empty output")
@@ -153,6 +166,8 @@ def run_granger_causality():
     sig_all.to_csv(RESULTS_DIR / "granger_significant.csv", index=False)
 
     log.info(f"\n✓ Granger complete: {len(sig_all)} significant features (p<{SIGNIFICANCE})")
+    log.info(f"  ⚠  All results labelled scope=full_sample_descriptive")
+    log.info(f"  ⚠  Do NOT use these p-values as index weights (train-frozen required)")
     if len(sig_all):
         log.info(f"  Top 5 features:")
         for _, row in sig_all.head(5).iterrows():
@@ -170,8 +185,9 @@ def run_granger_causality():
         ax.set_xlabel("F-statistic")
         ax.set_title(
             f"Granger Causality — Top 20 Features → WTI Oil Log Returns\n"
-            f"({'Full NLP+Quant signal' if has_nlp else 'Quantitative only'})",
-            fontsize=12
+            f"({'Full NLP+Quant signal' if has_nlp else 'Quantitative only'}) "
+            f"[FULL SAMPLE — DESCRIPTIVE ONLY]",
+            fontsize=11
         )
         ax.legend()
         plt.tight_layout()
