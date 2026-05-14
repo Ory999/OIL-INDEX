@@ -1,9 +1,9 @@
 {
-  "run_timestamp": "2026-05-13T08:49:07.579656",
-  "n_trading_days": 5048,
+  "run_timestamp": "2026-05-14T13:20:09.395196",
+  "n_trading_days": 5049,
   "n_features": 28,
   "date_range_start": "2007-01-03",
-  "date_range_end": "2026-05-12",
+  "date_range_end": "2026-05-13",
   "pct_missing": 8.53,
   "columns": [
     "oil",
@@ -35,11 +35,11 @@
     "cot_change_4w",
     "usd_ema_cross"
   ],
-  "latest_oil_price": 102.18,
-  "latest_oil_logret": 0.04105,
-  "prcsi_quant_latest": 51.14,
+  "latest_oil_price": 101.02,
+  "latest_oil_logret": -0.01142,
+  "prcsi_quant_latest": 52.97,
   "prcsi_quant_regime": "NEUTRAL",
   "quant_pipeline_complete": true,
-  "quant_run_timestamp": "2026-05-13T08:49:08.847752",
+  "quant_run_timestamp": "2026-05-14T13:20:10.029448",
   "nlp_scores_merged": false
 }
