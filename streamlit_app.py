@@ -599,6 +599,28 @@ with tab_live:
         fig.update_yaxes(row=1, col=1, range=[0, 100], **AXIS_STYLE, tickfont=dict(size=10))
         fig.update_yaxes(row=2, col=1, range=[0, 0.55], **AXIS_STYLE, tickfont=dict(size=10), title_text="Severity")
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        # ── Chart legend ─────────────────────────────────────────────────
+        st.markdown("""
+<div style='display:grid; grid-template-columns:1fr 1fr; gap:0.6rem 2rem;
+            font-family:DM Mono,monospace; font-size:0.68rem;
+            opacity:0.55; margin-top:0.8rem; line-height:1.8;'>
+  <div><span style='color:#f9fafb;'>━━</span>&nbsp; PRCSI — Institutional narrative sentiment (0–100)</div>
+  <div><span style='color:#f97316;'>┅┅</span>&nbsp; PSI — Price action sentiment (0–100)</div>
+  <div><span style='color:#f87171;'>▼</span>&nbsp; Bearish signal — PRCSI severity ≥ 0.2637, index > 50</div>
+  <div><span style='color:#4ade80;'>▲</span>&nbsp; Bullish signal — PRCSI severity ≥ 0.2637, index < 50</div>
+  <div><span style='background:#1e3f8a; padding:0 6px;'>&nbsp;&nbsp;</span>&nbsp; Fear zone (25–45)</div>
+  <div><span style='background:#7c2d12; padding:0 6px;'>&nbsp;&nbsp;</span>&nbsp; Greed zone (55–75)</div>
+  <div><span style='color:#6b7280;'>· · ·</span>&nbsp; Neutral line (50)</div>
+  <div><span style='color:#dc2626;'>- - -</span>&nbsp; Signal threshold (severity 0.2637 = top 10%)</div>
+  <div><span style='color:#374151; background:#374151; padding:0 6px;'>&nbsp;&nbsp;</span>&nbsp; Severity bar — height = |PRCSI − 50| × 2</div>
+  <div><span style='color:#dc2626; background:#dc2626; padding:0 6px;'>&nbsp;&nbsp;</span>&nbsp; Active signal day (severity above threshold)</div>
+</div>
+<div style='font-family:DM Mono,monospace; font-size:0.65rem; opacity:0.35;
+            margin-top:0.6rem; line-height:1.6;'>
+  Gap between PRCSI and PSI = divergence signal (Grossman-Stiglitz information asymmetry).
+  When PSI > PRCSI, price action is running ahead of institutional narrative — historically a contrarian reversal setup.
+</div>
+""", unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════════════
