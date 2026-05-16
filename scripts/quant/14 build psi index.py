@@ -1,31 +1,61 @@
 """
 Script 14 — Build Price Sentiment Index (PSI)
 Pure price-action fear/greed index for WTI crude oil.
-Companion to PRCSI for divergence analysis.
+Companion to PRCSI for divergence analysis (Grossman-Stiglitz 1980).
 
-Theoretical basis:
-  Grossman-Stiglitz (1980): If institutional insiders know something markets
-  don't, the gap between what they communicate (PRCSI) and what price action
-  implies (PSI) is the information asymmetry signal.
-  De Long et al. (1990): Noise traders push price beyond fundamentals in
-  high-volatility regimes. Signed volatility ratio detects this.
+METHODOLOGY — MOMENTUM EXTREMITY APPROACH
+==========================================
+Rather than comparing price LEVELS to historical levels, the PSI measures
+how extreme the current price MOVEMENT is relative to the most extreme
+movements ever recorded since 2007.
 
-Components (5, equal-weighted):
-  1. RSI(7)              — short-term overbought/oversold
-  2. Price vs MA14       — 2-week deviation (PRCSI's primary horizon)
-  3. Price vs MA30       — monthly deviation
-  4. Price vs MA60       — quarterly regime
-  5. Signed vol ratio    — vol_5d / vol_30d × sign(return_5d)
-                           positive = volatile upward spike (greed)
-                           negative = volatile crash (fear)
+Core insight: Fear and greed are momentum phenomena, not level phenomena.
+Greed = rushing to buy (fast upward moves). Fear = rushing to sell (fast falls).
+The absolute price level is secondary to the speed and magnitude of change.
 
-All components: direction-corrected, 252-day rolling percentile normalised.
-Smoothed with EMA(span=63) to match PRCSI construction.
-Output scale: 0–100 (50 = neutral).
+Three windows capture different market participant timescales:
+  3-month (63d) — Cyclical funds, refiners, commodity managers
+  1-week   (5d) — Momentum traders, CTAs, macro funds
+  1-day    (1d) — News-reactive traders, retail, short-term speculators
+
+Reference: EXPANDING MAXIMUM rise/fall from 2007 → self-calibrating.
+If a new record spike or crash occurs, it immediately becomes the benchmark.
+
+FORMULA (per window n):
+  ret_n      = price % change over n trading days
+  max_rise_n = expanding max(ret_n) since 2007  [most greedy move ever]
+  max_fall_n = expanding min(ret_n) since 2007  [most fearful move ever]
+
+  score = 0.5 + 0.5 × (ret_n / reference)
+  where reference = max_rise_n   if ret_n >= 0  (greed direction)
+                    |max_fall_n| if ret_n <  0  (fear direction)
+
+  → score 1.0: matches all-time record rise  (extreme greed)
+  → score 0.5: flat / no change              (neutral)
+  → score 0.0: matches all-time record fall  (extreme fear)
+
+Naturally bounded [0, 1]. No additional normalisation needed.
+
+WEIGHTS:
+  3-month: 2.0  (structural momentum — highest weight)
+  1-week:  1.5  (medium-term)
+  1-day:   1.0  (tactical)
+
+Final: weighted average → EMA(span=63) to match PRCSI smoothing.
+
+ACADEMIC ALIGNMENT:
+  De Bondt & Thaler (1985): Markets overreact to extreme price movements.
+  Scoring current movement as a fraction of the historical extreme directly
+  quantifies the degree of potential overreaction.
+
+  Grossman-Stiglitz (1980): PRCSI-PSI divergence detects information
+  asymmetry — institutions with multi-decade context perceive extreme
+  momentum moves differently from price-reactive participants.
 
 Outputs:
   data/results/psi_final.parquet
   data/results/psi_final.csv
+  data/results/psi_dashboard.png
 """
 import os, json, logging
 from pathlib import Path
@@ -44,20 +74,15 @@ RESULTS_DIR  = Path(os.getenv("RESULTS_DIR",  "data/results"))
 FEATURES_DIR = Path(os.getenv("FEATURES_DIR", "data/features"))
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Match PRCSI construction parameters exactly
-NORM_WINDOW = 252
-EMA_SMOOTH  = 63
+EMA_SMOOTH  = 63   # matches PRCSI exactly
+MIN_HISTORY = 252  # 1 year before computing expanding max/min
+
+WINDOWS = {"3m": 63, "1w": 5, "1d": 1}
 
 COMPONENT_WEIGHTS = {
-    "rsi_7":           1.0,   # short-term overbought/oversold
-    "dev_ma14":        1.0,   # 2-week deviation
-    "dev_ma30":        1.0,   # monthly deviation
-    "dev_ma60":        1.0,   # quarterly deviation
-    "signed_vol":      1.0,   # spike regime direction
-    "price_long_rank": 1.5,   # long-term price level in historical context
-                               # higher weight: most structurally important component
-                               # At $111 (~2x the 2007-2026 average of ~$50), this
-                               # should push PSI significantly higher than MA-only approaches
+    "fg_3m": 2.0,
+    "fg_1w": 1.5,
+    "fg_1d": 1.0,
 }
 
 
@@ -70,33 +95,46 @@ def classify_regime(score: float) -> str:
     else:               return "EXTREME_GREED"
 
 
-def rolling_percentile(series: pd.Series, window: int = NORM_WINDOW) -> pd.Series:
-    """252-day rolling percentile rank — matches PRCSI normalisation."""
-    return series.rolling(
-        window, min_periods=int(window * 0.5)
-    ).apply(
-        lambda x: (x[-1] > x[:-1]).sum() / (len(x) - 1) if len(x) > 1 else np.nan,
-        raw=True
-    )
+def momentum_fear_greed(price: pd.Series, n_days: int, label: str) -> pd.Series:
+    """
+    Score fear/greed for a given return window relative to
+    the maximum historical move in the same direction.
+    Returns Series bounded [0, 1].
+    """
+    ret = price.pct_change(n_days)
 
+    max_rise = ret.expanding(min_periods=MIN_HISTORY).max()
+    max_fall = ret.expanding(min_periods=MIN_HISTORY).min()
 
-def compute_rsi(price: pd.Series, window: int = 7) -> pd.Series:
-    """Standard RSI on price series. Returns 0–100."""
-    delta = price.diff()
-    gain  = delta.clip(lower=0).rolling(window, min_periods=1).mean()
-    loss  = (-delta.clip(upper=0)).rolling(window, min_periods=1).mean()
-    rs    = gain / loss.replace(0, 1e-10)
-    return 100 - (100 / (1 + rs))
+    score = pd.Series(np.nan, index=price.index)
+
+    pos = ret >= 0
+    neg = ret < 0
+
+    denom_pos = max_rise.where(max_rise > 1e-6, np.nan)
+    denom_neg = max_fall.abs().where(max_fall.abs() > 1e-6, np.nan)
+
+    score[pos] = (0.5 + 0.5 * (ret[pos] / denom_pos[pos])).clip(0, 1)
+    score[neg] = (0.5 + 0.5 * (ret[neg] / denom_neg[neg])).clip(0, 1)
+
+    # Diagnostics
+    if ret.notna().any():
+        lr = ret.dropna().iloc[-1]
+        mr = max_rise.dropna().iloc[-1] if max_rise.notna().any() else np.nan
+        mf = max_fall.dropna().iloc[-1] if max_fall.notna().any() else np.nan
+        sc = score.dropna().iloc[-1] if score.notna().any() else np.nan
+        log.info(f"  {label} ({n_days}d): ret={lr:+.1%}  "
+                 f"max_rise={mr:+.1%}  max_fall={mf:+.1%}  → score={sc:.3f}")
+
+    return score
 
 
 def build_psi():
-    # ── Load price data ───────────────────────────────────────────────────
     prices_path = RAW_DIR / "prices.parquet"
     if not prices_path.exists():
-        # Fallback: try master_quant
         prices_path = FEATURES_DIR / "master_quant.parquet"
     if not prices_path.exists():
-        log.warning("No price data found — skipping PSI build")
+        log.warning("No price data — skipping PSI build")
         return None
 
     raw = pd.read_parquet(prices_path)
@@ -105,100 +143,77 @@ def build_psi():
         raw.index = raw.index.tz_localize(None)
 
     if "oil" not in raw.columns:
-        log.warning("'oil' column not found — skipping PSI build")
+        log.warning("'oil' column missing — skipping PSI build")
         return None
 
-    price  = raw["oil"].ffill()
-    logret = raw["oil_logret"].ffill() if "oil_logret" in raw.columns \
-             else np.log(price / price.shift(1))
+    price = raw["oil"].ffill()
 
-    log.info(f"PSI building on {len(price)} trading days "
+    log.info(f"PSI: {len(price)} trading days  "
              f"({price.index.min().date()} → {price.index.max().date()})")
+    log.info(f"  Dataset price range: ${price.min():.2f} – ${price.max():.2f}")
+    log.info(f"  Current price: ${price.dropna().iloc[-1]:.2f}")
+    log.info(f"  Method: momentum extremity (score vs max historical move)")
 
-    components = pd.DataFrame(index=price.index)
+    # ── Three momentum components ─────────────────────────────────────────
+    components = {
+        "fg_3m": momentum_fear_greed(price, WINDOWS["3m"], "3-month"),
+        "fg_1w": momentum_fear_greed(price, WINDOWS["1w"], "1-week"),
+        "fg_1d": momentum_fear_greed(price, WINDOWS["1d"], "1-day"),
+    }
 
-    # ── Component 1: RSI(7) ───────────────────────────────────────────────
-    # High RSI (overbought) = greed → direction +1
-    rsi_raw = compute_rsi(price, window=7)
-    components["rsi_7"] = rolling_percentile(rsi_raw)
+    # ── Weighted composite + EMA smooth ──────────────────────────────────
+    total_w   = sum(COMPONENT_WEIGHTS.values())
+    raw_score = sum(
+        components[k].fillna(0.5) * w
+        for k, w in COMPONENT_WEIGHTS.items()
+    ) / total_w
 
-    # ── Components 2-4: Price deviation from MAs ──────────────────────────
-    # Positive deviation = price above MA = bullish = greed → direction +1
-    for days, label in [(14, "dev_ma14"), (30, "dev_ma30"), (60, "dev_ma60")]:
-        ma  = price.rolling(days, min_periods=int(days * 0.5)).mean()
-        dev = (price - ma) / ma.replace(0, np.nan)
-        components[label] = rolling_percentile(dev)
-
-    # ── Component 5: Signed volatility ratio ─────────────────────────────
-    # vol_5d / vol_30d * sign(5d return)
-    # High positive = volatile price spike upward = extreme greed
-    # High negative = volatile crash = extreme fear
-    vol_5d  = logret.rolling(5,  min_periods=3).std() * np.sqrt(252)
-    vol_30d = logret.rolling(30, min_periods=15).std() * np.sqrt(252)
-    ret_5d  = price.pct_change(5)
-
-    vol_ratio   = vol_5d / vol_30d.replace(0, np.nan).fillna(1.0)
-    signed_vol  = vol_ratio * np.sign(ret_5d)
-    components["signed_vol"] = rolling_percentile(signed_vol)
-
-    # ── Component 6: Long-term price level rank ───────────────────────────
-    # Rolling percentile over 2500 trading days (~10 years).
-    # Answers: "Is current price historically expensive?"
-    # At $111 (near 2008 highs, ~2x long-run average): rank ≈ 0.85-0.90
-    # At $20 (COVID 2020): rank ≈ 0.02
-    # Justification: Grossman-Stiglitz (1980) — if price deviates far from
-    # long-run fundamental value, information asymmetry with institutions
-    # who have multi-decade price context is most likely.
-    LONG_WINDOW = min(2500, int(len(price) * 0.8))  # adaptive: up to 10 years
-    components["price_long_rank"] = rolling_percentile(price, window=LONG_WINDOW)
-    log.info(f"  Long-term price rank window: {LONG_WINDOW} days "
-             f"({LONG_WINDOW/252:.1f} years)")
-
-    # ── Weighted composite ────────────────────────────────────────────────
-    raw_score = pd.Series(0.0, index=price.index)
-    total_w   = 0.0
-    for comp, w in COMPONENT_WEIGHTS.items():
-        if comp in components.columns:
-            raw_score += components[comp].fillna(0.5) * w
-            total_w   += w
-
-    if total_w > 0:
-        raw_score /= total_w
-
-    # FIX #5: EMA smooth matching PRCSI (span=63, no lookahead)
     psi_01  = raw_score.ewm(span=EMA_SMOOTH, min_periods=10).mean()
     psi_100 = psi_01 * 100
 
-    log.info(f"  PSI range: {psi_01.min():.3f} → {psi_01.max():.3f}")
+    log.info(f"  PSI composite: {psi_01.min():.3f} → {psi_01.max():.3f}")
 
-    # ── Build result DataFrame ────────────────────────────────────────────
+    # ── RSI(7) for display ────────────────────────────────────────────────
+    delta = price.diff()
+    gain  = delta.clip(lower=0).rolling(7, min_periods=1).mean()
+    loss  = (-delta.clip(upper=0)).rolling(7, min_periods=1).mean()
+    rsi_7 = 100 - (100 / (1 + gain / loss.replace(0, 1e-10)))
+
+    # ── Return and reference series ───────────────────────────────────────
+    ret_3m = price.pct_change(WINDOWS["3m"])
+    ret_1w = price.pct_change(WINDOWS["1w"])
+    ret_1d = price.pct_change(WINDOWS["1d"])
+
     result = pd.DataFrame({
-        "psi_01":       psi_01,
-        "psi":          psi_100,
-        "regime":       psi_100.apply(classify_regime),
-        "comp_rsi_7":   components.get("rsi_7",    pd.Series(np.nan, index=price.index)),
-        "comp_dev_ma14":components.get("dev_ma14", pd.Series(np.nan, index=price.index)),
-        "comp_dev_ma30":components.get("dev_ma30", pd.Series(np.nan, index=price.index)),
-        "comp_dev_ma60":components.get("dev_ma60", pd.Series(np.nan, index=price.index)),
-        "comp_signed_vol":    components.get("signed_vol",       pd.Series(np.nan, index=price.index)),
-        "comp_price_long":    components.get("price_long_rank", pd.Series(np.nan, index=price.index)),
-        "oil_price":    price,
-        "rsi_raw":      rsi_raw,
-        "vol_ratio":    vol_ratio,
+        "psi_01":        psi_01,
+        "psi":           psi_100,
+        "regime":        psi_100.apply(classify_regime),
+        "comp_fg_3m":    components["fg_3m"],
+        "comp_fg_1w":    components["fg_1w"],
+        "comp_fg_1d":    components["fg_1d"],
+        "ret_3m":        ret_3m,
+        "ret_1w":        ret_1w,
+        "ret_1d":        ret_1d,
+        "max_rise_3m":   ret_3m.expanding(min_periods=MIN_HISTORY).max(),
+        "max_fall_3m":   ret_3m.expanding(min_periods=MIN_HISTORY).min(),
+        "oil_price":     price,
+        "rsi_raw":       rsi_7,
     })
 
     result.to_parquet(RESULTS_DIR / "psi_final.parquet")
     result.to_csv(RESULTS_DIR    / "psi_final.csv")
 
-    # ── Dashboard chart ───────────────────────────────────────────────────
     _build_psi_chart(result)
 
-    # ── Update metadata ───────────────────────────────────────────────────
-    latest = result.dropna(subset=["psi"]).iloc[-1]
-    latest_score  = round(float(latest["psi"]), 2)
-    latest_regime = str(latest["regime"])
-    latest_rsi    = round(float(latest["rsi_raw"]), 1) if not np.isnan(latest["rsi_raw"]) else None
-    latest_vol    = round(float(latest["vol_ratio"]), 3) if not np.isnan(latest["vol_ratio"]) else None
+    # ── Metadata ──────────────────────────────────────────────────────────
+    latest       = result.dropna(subset=["psi"]).iloc[-1]
+    latest_score = round(float(latest["psi"]), 2)
+    latest_rsi   = round(float(latest["rsi_raw"]), 1) if not np.isnan(latest["rsi_raw"]) else None
+    r3m = round(float(latest["ret_3m"]) * 100, 1) if not np.isnan(latest["ret_3m"]) else None
+    r1w = round(float(latest["ret_1w"]) * 100, 1) if not np.isnan(latest["ret_1w"]) else None
+    r1d = round(float(latest["ret_1d"]) * 100, 1) if not np.isnan(latest["ret_1d"]) else None
+    mr  = round(float(latest["max_rise_3m"]) * 100, 1) if not np.isnan(latest["max_rise_3m"]) else None
+    mf  = round(float(latest["max_fall_3m"]) * 100, 1) if not np.isnan(latest["max_fall_3m"]) else None
 
     meta_path = RESULTS_DIR / "pipeline_metadata.json"
     metadata  = {}
@@ -207,90 +222,97 @@ def build_psi():
             metadata = json.load(f)
 
     metadata.update({
-        "psi_latest":         latest_score,
-        "psi_regime":         latest_regime,
-        "psi_date":           str(latest.name.date()),
-        "psi_rsi_7":          latest_rsi,
-        "psi_vol_ratio":      latest_vol,
-        "psi_complete":       True,
-        "psi_run_timestamp":  datetime.now().isoformat(),
+        "psi_latest":          latest_score,
+        "psi_regime":          str(latest["regime"]),
+        "psi_date":            str(latest.name.date()),
+        "psi_rsi_7":           latest_rsi,
+        "psi_ret_3m_pct":      r3m,
+        "psi_ret_1w_pct":      r1w,
+        "psi_ret_1d_pct":      r1d,
+        "psi_max_rise_3m_pct": mr,
+        "psi_max_fall_3m_pct": mf,
+        "psi_method":          "momentum_extremity_3windows",
+        "psi_complete":        True,
+        "psi_run_timestamp":   datetime.now().isoformat(),
     })
 
-    # ── Compute PRCSI-PSI divergence if PRCSI already built ──────────────
+    # ── Divergence from PRCSI ─────────────────────────────────────────────
     prcsi_path = RESULTS_DIR / "prcsi_final.parquet"
     if prcsi_path.exists():
         try:
             prcsi = pd.read_parquet(prcsi_path)
             prcsi.index = pd.to_datetime(prcsi.index)
             common = psi_01.index.intersection(prcsi.index)
-            if len(common) > 0:
+            if len(common):
                 div = prcsi.loc[common, "prcsi_01"] - psi_01[common]
-                latest_div = float(div.iloc[-1]) if not div.empty else 0.0
-                div_direction = (
-                    "PSI_LEADS"   if latest_div < -0.10 else
-                    "PRCSI_LEADS" if latest_div > 0.10 else
-                    "ALIGNED"
-                )
+                ld  = float(div.iloc[-1])
+                dd  = ("PSI_LEADS"   if ld < -0.10 else
+                       "PRCSI_LEADS" if ld >  0.10 else "ALIGNED")
                 metadata.update({
-                    "divergence":           round(latest_div, 4),
-                    "divergence_abs":       round(abs(latest_div), 4),
-                    "divergence_direction": div_direction,
-                    "divergence_pct_pts":   round(latest_div * 100, 1),
+                    "divergence":           round(ld, 4),
+                    "divergence_abs":       round(abs(ld), 4),
+                    "divergence_direction": dd,
+                    "divergence_pct_pts":   round(ld * 100, 1),
                 })
-                log.info(f"  Divergence PRCSI−PSI: {latest_div:+.4f} ({div_direction})")
+                log.info(f"  Divergence PRCSI−PSI: {ld:+.4f} ({dd})")
         except Exception as e:
             log.warning(f"  Could not compute divergence: {e}")
 
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    log.info(f"\n✓ PSI built: {latest_score:.1f} / 100  ({latest_regime})")
-    log.info(f"  RSI(7): {latest_rsi}  |  Vol ratio: {latest_vol}")
+    log.info(f"\n✓ PSI: {latest_score:.1f} / 100  ({latest['regime']})")
+    log.info(f"  3M: {r3m:+.1f}% vs max_rise {mr:+.1f}% / max_fall {mf:+.1f}%")
+    log.info(f"  1W: {r1w:+.1f}%   1D: {r1d:+.1f}%   RSI(7): {latest_rsi}")
     return result
 
 
 def _build_psi_chart(result: pd.DataFrame):
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(16, 10),
-                                          sharex=True,
-                                          gridspec_kw={"height_ratios": [1.5, 2, 1]})
-    fig.suptitle("Price Sentiment Index (PSI) — WTI Crude Oil",
-                 fontsize=13, fontweight="bold")
+    fig, axes = plt.subplots(3, 1, figsize=(16, 12), sharex=True,
+                             gridspec_kw={"height_ratios": [1.2, 1.8, 1.0]})
+    fig.suptitle(
+        "Price Sentiment Index (PSI) — WTI Crude Oil\n"
+        "Score = current move / max historical move  "
+        "(1.0 = matches all-time record rise, 0.0 = matches all-time record fall)",
+        fontsize=11, fontweight="bold"
+    )
 
-    # Panel 1: WTI price
+    ax1 = axes[0]
     ax1.plot(result.index, result["oil_price"], color="#f97316", linewidth=1.0)
-    for days, col in [(14,"#fbbf24"),(30,"#fb923c"),(60,"#e11d48")]:
+    for days, col, lbl in [(14,"#fbbf24","MA14"),(30,"#fb923c","MA30"),(60,"#e11d48","MA60")]:
         ma = result["oil_price"].rolling(days, min_periods=int(days*0.5)).mean()
-        ax1.plot(result.index, ma, linewidth=0.8, alpha=0.7, label=f"MA{days}")
-    ax1.set_ylabel("WTI Price (USD)", fontsize=9)
+        ax1.plot(result.index, ma, linewidth=0.7, alpha=0.7, label=lbl)
+    ax1.set_ylabel("WTI (USD)", fontsize=9)
     ax1.legend(fontsize=7, loc="upper left")
     ax1.grid(alpha=0.2)
 
-    # Panel 2: PSI
-    ax2.fill_between(result.index, 50, result["psi"],
-                     where=result["psi"] >= 50, alpha=0.15, color="#dc2626")
-    ax2.fill_between(result.index, result["psi"], 50,
-                     where=result["psi"] < 50, alpha=0.15, color="#2563EB")
-    ax2.plot(result.index, result["psi"], color="#f9fafb", linewidth=1.2, label="PSI")
+    ax2 = axes[1]
+    for y0, y1, clr in [(0,25,"#0d1f5c"),(25,45,"#1e3f8a"),(45,55,"#1f2937"),
+                         (55,75,"#7c2d12"),(75,100,"#450a0a")]:
+        ax2.axhspan(y0, y1, alpha=0.25, color=clr, linewidth=0)
+    ax2.plot(result.index, result["psi"], color="#f9fafb", linewidth=1.4, label="PSI")
     ax2.axhline(50, color="gray", linewidth=0.8, linestyle=":")
     ax2.set_ylim(0, 100)
-    ax2.set_ylabel("PSI (0=fear, 100=greed)", fontsize=9)
+    ax2.set_ylabel("PSI", fontsize=9)
     ax2.grid(alpha=0.2)
 
-    # Panel 3: RSI
-    ax3.plot(result.index, result["rsi_raw"], color="#60a5fa", linewidth=0.9)
-    ax3.axhline(70, color="#dc2626", linewidth=0.8, linestyle="--", alpha=0.6,
-                label="Overbought (70)")
-    ax3.axhline(30, color="#3b82f6", linewidth=0.8, linestyle="--", alpha=0.6,
-                label="Oversold (30)")
+    ax3 = axes[2]
+    ax3.plot(result.index, result["comp_fg_3m"] * 100,
+             color="#60a5fa", linewidth=1.0, label="3M (2×)")
+    ax3.plot(result.index, result["comp_fg_1w"] * 100,
+             color="#a78bfa", linewidth=0.8, alpha=0.8, label="1W (1.5×)")
+    ax3.plot(result.index, result["comp_fg_1d"] * 100,
+             color="#f9a8d4", linewidth=0.6, alpha=0.6, label="1D (1×)")
+    ax3.axhline(50, color="gray", linewidth=0.8, linestyle=":")
     ax3.set_ylim(0, 100)
-    ax3.set_ylabel("RSI(7)", fontsize=9)
-    ax3.legend(fontsize=7, loc="upper right")
+    ax3.set_ylabel("Components", fontsize=9)
+    ax3.legend(fontsize=7, loc="upper left")
     ax3.grid(alpha=0.2)
 
     plt.tight_layout()
     plt.savefig(RESULTS_DIR / "psi_dashboard.png", dpi=150, bbox_inches="tight")
     plt.close()
-    log.info(f"  PSI chart saved → {RESULTS_DIR / 'psi_dashboard.png'}")
+    log.info(f"  Chart → {RESULTS_DIR / 'psi_dashboard.png'}")
 
 
 if __name__ == "__main__":
