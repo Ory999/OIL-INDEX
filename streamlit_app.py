@@ -212,14 +212,14 @@ PLOT_LAYOUT = dict(
 AXIS_STYLE = dict(gridcolor="#1f2937", zeroline=False)
 
 # ── Data loading ──────────────────────────────────────────────────────────────
-@st.cache_data(ttl=1800)  # refresh cache every 30 minutes
+@st.cache_data(ttl=60)  # refresh every 60 seconds
 def load_metadata() -> dict:
     if not META_PATH.exists():
         return {}
     with open(META_PATH) as f:
         return json.load(f)
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=60)
 def load_index() -> pd.DataFrame | None:
     if not PARQUET.exists():
         return None
@@ -230,7 +230,7 @@ def load_index() -> pd.DataFrame | None:
 meta = load_metadata()
 df   = load_index()
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=60)
 def load_psi() -> pd.DataFrame | None:
     path = RESULTS_DIR / "psi_final.parquet"
     if not path.exists():
@@ -383,7 +383,7 @@ with tab_live:
         </div>
         <div style='font-family:DM Mono; font-size:0.62rem; opacity:0.35;
                     text-align:center; padding:0 0.5rem; line-height:1.6;'>
-          {"⚡ Price running ahead of institutional narrative" if div_direction=="PSI_LEADS"
+          {"⚡ Price momentum ahead of institutional narrative (≥7pt gap)" if div_direction=="PSI_LEADS"
            else "📣 Narrative ahead of price" if div_direction=="PRCSI_LEADS"
            else "Institutional narrative and price aligned"}
         </div>""", unsafe_allow_html=True)
