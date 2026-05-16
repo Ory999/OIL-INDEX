@@ -52,5 +52,27 @@
   "divergence": -0.2122,
   "divergence_abs": 0.2122,
   "divergence_direction": "PSI_LEADS",
-  "divergence_pct_pts": -21.2
+  "divergence_pct_pts": -21.2,
+  "prcsi_latest": 46.41,
+  "prcsi_regime": "NEUTRAL",
+  "prcsi_date": "2026-05-13",
+  "prcsi_severity": 0.0718,
+  "signal_active": false,
+  "signal_direction": "NONE",
+  "signal_tier": "none",
+  "signal_threshold_used": 0.2637,
+  "signal_horizon_days": [
+    21,
+    42
+  ],
+  "tier_accuracy_full": null,
+  "tier_accuracy_oos": null,
+  "nlp_is_fresh": false,
+  "signals_last_30d": 0,
+  "full_index_complete": true,
+  "nlp_scores_used": true,
+  "n_stable_features_used": 9,
+  "full_run_timestamp": "2026-05-16T14:36:48.064260",
+  "index_method": "rolling_percentile_ema63_stable9_contrarian",
+  "validated_oos_accuracy": "86.8% top-10% OOS (21d horizon, 5 independent blocks)"
 }
