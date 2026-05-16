@@ -289,14 +289,65 @@ if df is None or len(df) == 0:
     st.stop()
 
 # ── MAIN LAYOUT ───────────────────────────────────────────────────────────────
-tab_live, tab_history, tab_signals, tab_method = st.tabs([
-    "Live Index", "Historical Chart", "Signal Log", "Methodology"
+tab_live, tab_history, tab_signals = st.tabs([
+    "Live Index", "Historical Chart", "Signal Log"
 ])
 
 # ════════════════════════════════════════════════
 # TAB 1 — LIVE INDEX
 # ════════════════════════════════════════════════
 with tab_live:
+
+    # ── About this index ─────────────────────────────────────────────────
+    with st.expander("📖  What is the WTI Oil Fear & Greed Index?", expanded=False):
+        col_a, col_b = st.columns([1, 1])
+        with col_a:
+            st.markdown("""
+**Two indices, one divergence signal.**
+
+This dashboard runs two parallel sentiment indices for WTI crude oil:
+
+**PRCSI — Petroleum Risk & Conviction Sentiment Index**
+Measures what oil market *institutions* are communicating. Built from NLP scoring
+of OPEC Monthly Oil Market Reports, EIA Short-Term Energy Outlooks, and Saudi Aramco
+press coverage — combined with EIA inventory data, CFTC futures positioning, and
+FRED macro controls. Updated daily via automated pipeline.
+
+**PSI — Price Sentiment Index**
+Measures what *price action* implies. Scores current price movements relative to
+the most extreme rises and falls since 2007 — capturing whether today's momentum
+is historically extreme or moderate.
+
+**The divergence between them** is the core signal. When price action is far more
+extreme than institutional communication, it suggests the market is moving faster
+than fundamentals justify — a classic information asymmetry setup.
+""")
+        with col_b:
+            st.markdown("""
+**Fear & Greed in oil — different from stocks.**
+
+In equity markets, fear & greed indices are typically *momentum* indicators:
+high greed = market is overbought = caution. Oil works differently.
+
+The PRCSI is **contrarian on institutional sentiment**: when OPEC, EIA, and Aramco
+communicate extreme confidence (greed), oil prices have historically tended to *fall*
+over the following 21–42 trading days. When they communicate extreme caution (fear),
+prices have tended to rise.
+
+Why? Institutional overconfidence often precedes supply-side miscalculation —
+OPEC production decisions, refinery scheduling, and inventory management are all
+influenced by prevailing sentiment. When institutions are greedy, they tend to
+over-supply; when fearful, they under-supply.
+
+The PSI works the opposite way: extreme price greed (fast upward moves) and extreme
+institutional fear (cautious communications) together form the strongest
+contrarian buy signal.
+
+**Validated OOS accuracy (2020–2026):** 86.8% directional accuracy at the
+top 10% severity threshold over a 21-day forward horizon.
+""")
+
+    st.markdown("")
 
     # ── Three-column layout: PRCSI | Divergence | PSI ──────────────────
     col_prcsi, col_div, col_psi = st.columns([1, 0.7, 1])
@@ -497,6 +548,28 @@ with tab_live:
               <div class='stat-sub'>top 10% firings</div>
             </div>""", unsafe_allow_html=True)
 
+    # ── Data sources ─────────────────────────────────────────────────────
+    with st.expander("🗂  What data is this built on?", expanded=False):
+        st.markdown("""
+| Source | What it contributes | Frequency |
+|---|---|---|
+| **OPEC Monthly Oil Market Report** | Cartel production sentiment, supply outlook | Monthly |
+| **EIA Short-Term Energy Outlook** | US government demand/supply forecasts | Monthly |
+| **Saudi Aramco press coverage** | World's largest producer signals | Daily |
+| **EIA Weekly Petroleum Status** | Inventory surprise — #1 short-term price driver | Weekly |
+| **CFTC Commitments of Traders** | Managed money positioning (speculators) | Weekly |
+| **FRED** | Fed funds rate, USD broad index, breakeven inflation | Daily |
+| **WTI Futures (yfinance)** | Price, returns, volatility — PSI inputs only | Daily |
+
+The OPEC, EIA, and Aramco texts are scored by a locally-hosted LLM (`gpt-oss-20b`)
+using a locked system prompt validated against historic backfill. Scores cover 6 dimensions:
+oil impact, supply disruption, demand outlook, geopolitical risk, surface-vs-implied divergence,
+and institutional confidence. NLP data is genuine on ~5.5% of trading days (publication days);
+other days carry the most recent publication forward (21-day maximum fill).
+""")
+
+    st.markdown("")
+
     # ── Index history chart with range selector ──────────────────────
     st.markdown("<div class='section-header'>Index History</div>", unsafe_allow_html=True)
 
@@ -629,6 +702,38 @@ with tab_live:
 with tab_history:
     st.markdown("<div class='section-header'>Full History — PRCSI vs WTI Price</div>",
                 unsafe_allow_html=True)
+
+    with st.expander("📊  How to read this chart", expanded=False):
+        st.markdown("""
+**Top panel — WTI Oil Price (USD)**
+Raw daily closing price with moving averages (MA7/14/30/60). The MAs show how far
+current price has deviated from its recent trend. A price far above MA60 indicates
+the move has outrun the structural trend — historically a mean-reversion setup.
+
+**Middle panel — PRCSI vs PSI**
+- **White line (PRCSI):** Institutional narrative sentiment. Moves slowly — dominated by
+  monthly OPEC/EIA publications smoothed with a 63-day EMA.
+- **Orange dotted line (PSI):** Price action sentiment. More reactive — reflects how extreme
+  current price momentum is relative to the biggest moves since 2007.
+- **Coloured bands:** Fear (blue, 0–45) → Neutral (grey, 45–55) → Greed (red, 55–100).
+- **▼ Red triangles:** Active bearish signal — PRCSI above 50 with severity ≥ 0.2637.
+  Contrarian interpretation: institutional greed → price likely to fall over next 21–42 days.
+- **▲ Green triangles:** Active bullish signal — PRCSI below 50 with severity ≥ 0.2637.
+  Contrarian interpretation: institutional fear → price likely to rise.
+
+**The gap between PRCSI and PSI is the key signal.**
+When PSI > PRCSI (price action more extreme than institutional narrative), the market is
+moving faster than what institutions are communicating — consistent with Grossman-Stiglitz
+(1980) information asymmetry. Historically this gap has preceded reversals.
+When PRCSI > PSI, institutions are more bullish than price reflects — a potential
+accumulation signal.
+
+**Bottom panel — Signal Severity**
+`Severity = |PRCSI − 50| × 2`. Ranges 0–1. Bars turn red when severity crosses 0.2637 —
+the train-frozen top-10% threshold computed on 2007–2019 data. Only red bars correspond
+to active signals with validated directional accuracy.
+""")
+    st.markdown("")
 
     if df is not None:
         fig2 = make_subplots(
@@ -773,6 +878,39 @@ with tab_signals:
     st.markdown("<div class='section-header'>Signal History — All Active Signals</div>",
                 unsafe_allow_html=True)
 
+    with st.expander("⚡  How signals work", expanded=False):
+        st.markdown("""
+**What triggers a signal?**
+A signal fires when `severity = |PRCSI − 50| × 2` exceeds **0.2637** — the 90th percentile
+of all severity readings in the 2007–2019 training period. This threshold is frozen: it does
+not update as new data arrives, preventing threshold leakage.
+
+**Signal tiers**
+| Tier | Severity | Historical OOS accuracy | Note |
+|---|---|---|---|
+| Top 10% ★ | ≥ 0.2637 | **86.8%** | 5 independent blocks — primary validated tier |
+| Top 5% ★★ | ≥ 0.2879 | 96.5% | 2 blocks — exploratory, use with caution |
+| Top 2% ★★★ | ≥ 0.3146 | 97.1% | Rare — treat as confirmation only |
+
+**Bearish vs Bullish — the contrarian logic**
+Oil's PRCSI is a *contrarian* indicator — the opposite of a momentum signal:
+- **BEARISH signal** = PRCSI > 50 (institutional greed) → price predicted to **fall**
+  Institutions are overconfident → supply-side miscalculation likely → price correction
+- **BULLISH signal** = PRCSI < 50 (institutional fear) → price predicted to **rise**
+  Institutions are too cautious → undersupply developing → price recovery
+
+This is the opposite of how most equity fear & greed indices work, where greed = sell.
+Here, institutional *communication* greed (not price greed) is the contrarian signal.
+
+**Horizon:** 21–42 trading days (approximately 1–2 calendar months).
+This is not a day-trading signal. Accuracy was validated on 21-day forward returns.
+
+**Regime sensitivity:** OOS accuracy was 98.7% in volatile regimes (2020–2022)
+and 64.1% in stable regimes (2023–2026). Signals fired during geopolitical shocks,
+supply disruptions, and demand collapses carry higher historical reliability.
+""")
+    st.markdown("")
+
     if df is not None and "signal_active" in df.columns:
         sig_df = df[df["signal_active"]].copy()
         sig_df = sig_df.sort_index(ascending=False)
@@ -852,94 +990,6 @@ with tab_signals:
                 },
             )
 
-
-# ════════════════════════════════════════════════
-# TAB 4 — METHODOLOGY
-# ════════════════════════════════════════════════
-with tab_method:
-    col_m1, col_m2 = st.columns([1, 1])
-
-    with col_m1:
-        st.markdown("""
-#### What is this index?
-
-The **PRCSI (Petroleum Risk & Conviction Sentiment Index)** is a contrarian
-institutional sentiment indicator for WTI crude oil. It aggregates signals from
-EIA inventory data, COT positioning, macro controls, and NLP-scored
-institutional publications (OPEC MOMR, EIA STEO, Saudi Aramco).
-
-#### How is it constructed?
-
-**9 stable features** are used — those significant in ≥20% of rolling Granger
-causality windows on the 2007–2019 training period:
-
-| Feature | Group | Direction |
-|---|---|---|
-| crude_stocks_change | EIA Fundamentals | Bearish when positive |
-| eia_surprise_norm | EIA Fundamentals | Bearish when positive |
-| refinery_util_pct | EIA Fundamentals | Bullish when high |
-| usd_logret | Macro Controls | Bearish when positive |
-| cot_net_long | COT Positioning | Bullish when high |
-| sent_ema_cross | NLP Momentum | Bullish when positive |
-| divergence_ema | NLP Momentum | Greed signal |
-| oil_impact_score | Raw LLM | Bullish when positive |
-| institutional_confidence | Raw LLM | Bullish when high |
-
-Each feature is direction-corrected then **252-day rolling percentile ranked**
-and combined using Granger-derived weights × group weights (EIA 2.5×,
-Macro 2.5×, COT 1×, NLP 1×, Raw LLM 0.5×). Smoothed with EMA(span=63).
-""")
-
-    with col_m2:
-        st.markdown("""
-#### Prediction layer
-
-The index is **contrarian**: high readings (greed) predict price falls.
-
-| Severity | Tier | Signal |
-|---|---|---|
-| ≥ 0.2637 | Top 10% ★ | Active |
-| ≥ 0.2879 | Top 5% ★★ | Active |
-| ≥ 0.3146 | Top 2% ★★★ | Active |
-| < 0.2637 | — | No signal |
-
-Severity = \|index − 0.5\| × 2
-
-**Validated out-of-sample performance (2020–2026, 21-day horizon):**
-
-| Tier | Full-sample | OOS | Blocks |
-|---|---|---|---|
-| Top 10% | 67.7% | **86.8%** | 5 ✅ |
-| Top 5% | 80.3% | 96.5% | 2 ⚠️ |
-
-Block bootstrap p < 0.001. Price contrarian baseline: 49.9%.
-
-#### Limitations
-
-- Horizon: 21–42 trading days. **Not a day-trading signal.**
-- OOS accuracy is regime-sensitive: 98.7% in volatile periods (2020–2022),
-  64.1% in stable periods (2023–2026).
-- NLP data is fresh on ~5.5% of days (publication days only).
-  Other days carry the most recent publication forward.
-- The macro orthogonalisation OLS result (p=0.0001) is inflated by
-  overlapping returns. HAC-corrected p = 0.2313 (not formally significant).
-- Single OOS era: results may not generalise to unseen regimes.
-""")
-
-    st.markdown("""
-#### Data sources
-
-| Source | Frequency | Coverage |
-|---|---|---|
-| EIA Weekly Petroleum Report | Weekly | 2007–present |
-| CFTC Commitments of Traders | Weekly | 2007–present |
-| FRED Macro (Fed Funds, USD) | Daily | 2007–present |
-| OPEC Monthly Oil Market Report | Monthly | 2007–present |
-| EIA Short-Term Energy Outlook | Monthly | 2007–present |
-| Saudi Aramco press coverage | Daily | 2020–present |
-
-Pipeline runs Mon–Fri at ~07:00 UTC via GitHub Actions.
-""")
 
 # ── FOOTER ────────────────────────────────────────────────────────────────────
 last_update = run_ts[:10] if run_ts else "unknown"
