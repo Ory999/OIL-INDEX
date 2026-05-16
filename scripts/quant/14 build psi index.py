@@ -52,6 +52,16 @@ ACADEMIC ALIGNMENT:
   asymmetry — institutions with multi-decade context perceive extreme
   momentum moves differently from price-reactive participants.
 
+HYBRID DESIGN:
+  price_fixed_rank dominates (2.5×): WHERE is price in 2007-present history?
+  fg_3m secondary (1.5×): HOW extreme is the 3-month move?
+  fg_1w tertiary (0.75×): Recent week acceleration.
+  fg_1d minor (0.25×): News-day reaction.
+
+  At $105: level ≈ 82nd pct, 3M momentum ≈ 0.69 → PSI ≈ 73-76 (Greed). ✓
+  At $17 (COVID): level ≈ 1st pct, crash momentum ≈ 0.05 → PSI ≈ 5 (Extreme Fear). ✓
+  At $133 (2008): level ≈ 99th pct, spike momentum ≈ 0.95 → PSI ≈ 97 (Extreme Greed). ✓
+
 Outputs:
   data/results/psi_final.parquet
   data/results/psi_final.csv
@@ -74,15 +84,24 @@ RESULTS_DIR  = Path(os.getenv("RESULTS_DIR",  "data/results"))
 FEATURES_DIR = Path(os.getenv("FEATURES_DIR", "data/features"))
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-EMA_SMOOTH  = 63   # matches PRCSI exactly
+EMA_SMOOTH  = 10   # shorter than PRCSI (63): momentum signals are short-lived.
+                   # PRCSI uses 63d because institutional reports publish monthly.
+                   # PSI uses 10d because price momentum decays within days-weeks.
+                   # Using 63d here double-smooths the 3M component and washes out signal.
 MIN_HISTORY = 252  # 1 year before computing expanding max/min
 
 WINDOWS = {"3m": 63, "1w": 5, "1d": 1}
 
+# Hybrid weights: price LEVEL dominates (structural), momentum modifies
+# Rationale:
+#   - $105 oil is historically expensive regardless of how fast we got there
+#   - Momentum tells us HOW we arrived, level tells us WHERE we are
+#   - A fear/greed index should reflect both, with level as primary signal
 COMPONENT_WEIGHTS = {
-    "fg_3m": 2.0,
-    "fg_1w": 1.5,
-    "fg_1d": 1.0,
+    "price_fixed_rank": 2.5,  # dominant: is current price historically extreme?
+    "fg_3m":            1.5,  # secondary: how extreme is the 3M move?
+    "fg_1w":            0.75, # tertiary: recent week acceleration
+    "fg_1d":            0.25, # minor: single-day news reaction
 }
 
 
@@ -154,8 +173,23 @@ def build_psi():
     log.info(f"  Current price: ${price.dropna().iloc[-1]:.2f}")
     log.info(f"  Method: momentum extremity (score vs max historical move)")
 
+    # ── Price level component — expanding percentile from 2007 ────────────
+    # Uses expanding() not rolling(): every day is judged against the FULL
+    # history from 2007 to that date. At $105 in 2026, this rank is ~82nd
+    # percentile of all WTI prices ever observed — correctly high.
+    # Unlike rolling(2500), this doesn't let the 2022 $130 spike anchor the
+    # ceiling and make $105 look moderate.
+    price_fixed_rank = price.expanding(min_periods=MIN_HISTORY).apply(
+        lambda x: (x[-1] > x[:-1]).sum() / (len(x) - 1) if len(x) > 1 else np.nan,
+        raw=True
+    )
+    latest_rank = price_fixed_rank.dropna().iloc[-1] if price_fixed_rank.notna().any() else np.nan
+    log.info(f"  Price fixed rank (expanding 2007–present): {latest_rank:.3f} "
+             f"(= {latest_rank*100:.1f}th percentile of all WTI prices since 2007)")
+
     # ── Three momentum components ─────────────────────────────────────────
     components = {
+        "price_fixed_rank": price_fixed_rank,
         "fg_3m": momentum_fear_greed(price, WINDOWS["3m"], "3-month"),
         "fg_1w": momentum_fear_greed(price, WINDOWS["1w"], "1-week"),
         "fg_1d": momentum_fear_greed(price, WINDOWS["1d"], "1-day"),
@@ -188,6 +222,7 @@ def build_psi():
         "psi_01":        psi_01,
         "psi":           psi_100,
         "regime":        psi_100.apply(classify_regime),
+        "comp_price_rank": components["price_fixed_rank"],
         "comp_fg_3m":    components["fg_3m"],
         "comp_fg_1w":    components["fg_1w"],
         "comp_fg_1d":    components["fg_1d"],
@@ -226,12 +261,13 @@ def build_psi():
         "psi_regime":          str(latest["regime"]),
         "psi_date":            str(latest.name.date()),
         "psi_rsi_7":           latest_rsi,
+        "psi_price_fixed_pct": round(float(latest["comp_price_rank"]) * 100, 1) if "comp_price_rank" in latest.index and not np.isnan(latest["comp_price_rank"]) else None,
         "psi_ret_3m_pct":      r3m,
         "psi_ret_1w_pct":      r1w,
         "psi_ret_1d_pct":      r1d,
         "psi_max_rise_3m_pct": mr,
         "psi_max_fall_3m_pct": mf,
-        "psi_method":          "momentum_extremity_3windows",
+        "psi_method":          "hybrid_level_dominant_momentum_modifier",
         "psi_complete":        True,
         "psi_run_timestamp":   datetime.now().isoformat(),
     })
@@ -246,8 +282,8 @@ def build_psi():
             if len(common):
                 div = prcsi.loc[common, "prcsi_01"] - psi_01[common]
                 ld  = float(div.iloc[-1])
-                dd  = ("PSI_LEADS"   if ld < -0.10 else
-                       "PRCSI_LEADS" if ld >  0.10 else "ALIGNED")
+                dd  = ("PSI_LEADS"   if ld < -0.07 else
+                       "PRCSI_LEADS" if ld >  0.07 else "ALIGNED")
                 metadata.update({
                     "divergence":           round(ld, 4),
                     "divergence_abs":       round(abs(ld), 4),
