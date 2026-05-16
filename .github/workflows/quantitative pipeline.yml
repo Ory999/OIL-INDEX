@@ -68,9 +68,6 @@ jobs:
       - name: Build Price Sentiment Index (PSI)
         run: python3 "scripts/quant/14 build psi index.py"
 
-      - name: Build Price Sentiment Index (PSI)
-        run: python3 "scripts/quant/14 build psi index.py"
-
       - name: Upload data artefacts
         uses: actions/upload-artifact@v4
         with:
