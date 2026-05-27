@@ -1,4 +1,4 @@
-# Econometric Analysis Pipeline (Full PRCSI)
+# Econometric Analysis Pipeline (Full PRCSI).
 # Triggers automatically after Qualitative NLP Pipeline completes.
 # Stationarity, Granger, VAR/IRF, SHAP, builds full PRCSI from combined master.
 
