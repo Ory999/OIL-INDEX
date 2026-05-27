@@ -1,4 +1,4 @@
-# Qualitative NLP Pipeline
+# Qualitative NLP Pipeline.
 # Runs Mon-Fri 06:30 UTC after quantitative pipeline.
 # Collects institutional text, scores with LLM, builds sentiment momentum.
 # Active sources: OPEC_MOMR, ARAMCO, EIA_STEO, 3 sources, 695 historic docs.
