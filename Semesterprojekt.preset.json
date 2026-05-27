@@ -1,0 +1,88 @@
+{
+  "identifier": "@local:semesterprojekt",
+  "name": "Semesterprojekt",
+  "changed": true,
+  "operation": {
+    "fields": [
+      {
+        "key": "llm.prediction.temperature",
+        "value": 0.1
+      },
+      {
+        "key": "llm.prediction.structured",
+        "value": {
+          "type": "json",
+          "jsonSchema": {
+            "type": "object",
+            "properties": {
+              "oil_impact_score": {
+                "type": "number",
+                "minimum": -1,
+                "maximum": 1
+              },
+              "supply_disruption_signal": {
+                "type": "number",
+                "minimum": -1,
+                "maximum": 1
+              },
+              "demand_outlook_signal": {
+                "type": "number",
+                "minimum": -1,
+                "maximum": 1
+              },
+              "geopolitical_risk_signal": {
+                "type": "number",
+                "minimum": -1,
+                "maximum": 1
+              },
+              "surface_vs_implied_divergence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "institutional_confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "dominant_theme": {
+                "type": "string",
+                "enum": [
+                  "SUPPLY_CONCERN",
+                  "DEMAND_WEAKNESS",
+                  "GEOPOLITICAL",
+                  "PRODUCTION_CUT",
+                  "PRODUCTION_INCREASE",
+                  "MARKET_BALANCE",
+                  "PRICE_FORECAST",
+                  "SANCTIONS",
+                  "NEUTRAL"
+                ]
+              },
+              "reasoning": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "oil_impact_score",
+              "supply_disruption_signal",
+              "demand_outlook_signal",
+              "geopolitical_risk_signal",
+              "surface_vs_implied_divergence",
+              "institutional_confidence",
+              "dominant_theme",
+              "reasoning"
+            ]
+          }
+        }
+      },
+      {
+        "key": "ext.virtualModel.customField.openai.gptOss20b.reasoningEffort",
+        "value": "high"
+      }
+    ]
+  },
+  "load": {
+    "fields": []
+  }
+}

@@ -1,0 +1,124 @@
+# Qualitative NLP Pipeline
+# Runs Mon-Fri 06:30 UTC after quantitative pipeline.
+# Collects institutional text, scores with LLM, builds sentiment momentum.
+# Active sources: OPEC_MOMR, ARAMCO, EIA_STEO, 3 sources, 695 historic docs.
+
+name: Qualitative NLP Pipeline
+
+on:
+  schedule:
+    - cron: "30 6 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  qualitative:
+    name: Collect & Score Institutional Reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      START_DATE:    "2007-01-01"
+      DATA_DIR:      data/raw
+      FEATURES_DIR:  data/features
+      RESULTS_DIR:   data/results
+      HISTORIC_DIR:  data/Historic
+      LLM_BASE_URL:  ${{ secrets.LLM_BASE_URL }}
+      LLM_MODEL:     "openai/gpt-oss-20b"
+      EMA_FAST:      "3"
+      EMA_SLOW:      "14"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install pandas numpy pyarrow requests \
+                       pdfplumber feedparser \
+                       transformers torch \
+                       bertopic sentence-transformers \
+                       umap-learn hdbscan \
+                       openai httpx \
+                       scikit-learn tqdm \
+                       python-dotenv
+
+      - name: Create data directories
+        run: |
+          mkdir -p data/raw data/features data/results data/Historic
+          mkdir -p data/raw/opec_pdfs data/raw/eia_steo
+
+      - name: Collect OPEC Monthly Reports
+        run: python3 "scripts/qual/Qual 1 Collect opec.py"
+
+      - name: Collect Saudi Aramco News
+        run: python3 "scripts/qual/Qual 4 collect aramco.py"
+
+      - name: Collect EIA STEO Narratives
+        run: python3 "scripts/qual/Qual 2 Collect opec.py and collect eia steo.py"
+
+      - name: Build Combined Corpus
+        run: python3 "scripts/qual/Qual 3 Collect opec.py and build corpus.py"
+
+      # FinBERT removed from active pipeline, retained for r=0.13 paper baseline.
+      # continue-on-error so failure does not block LLM scoring or downstream steps.
+      - name: FinBERT Baseline Scoring (legacy — paper baseline only)
+        run: python3 "scripts/qual/19 finbert scoring.py"
+        continue-on-error: true
+
+      - name: LLM Multidimensional Scoring
+        run: python3 "scripts/qual/Qual 6 llm scoring.py"
+        env:
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL:    "openai/gpt-oss-20b"
+
+      - name: BERTopic Topic Clustering
+        run: python3 "scripts/qual/Qual 5 bertopic clustering.py"
+
+      - name: Sentiment Momentum Features
+        run: python3 "scripts/qual/Qual 8 sentiment momentum.py"
+
+      - name: Merge NLP Scores into Master Dataset
+        run: python3 "scripts/qual/Qual 7 merge nlp master.py"
+
+      - name: Upload NLP artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nlp-data-${{ github.run_number }}
+          path: |
+            data/raw/opec_corpus.parquet
+            data/raw/aramco_corpus.parquet
+            data/raw/eia_steo_corpus.parquet
+            data/raw/combined_corpus.parquet
+            data/raw/finbert_scores.parquet
+            data/raw/llm_scores.parquet
+            data/raw/corpus_with_topics.parquet
+            data/raw/sentiment_features.parquet
+            data/features/master_with_nlp.parquet
+            data/results/pipeline_metadata.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Commit updated data files
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/ || true
+          git diff --staged --quiet || git commit -m "chore: daily NLP update $(date +%Y-%m-%d)"
+          git push || true
+
+      - name: Report status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Qualitative pipeline completed successfully"
+            cat data/results/pipeline_metadata.json 2>/dev/null || true
+          else
+            echo "❌ Qualitative pipeline FAILED"
+            exit 1
+          fi

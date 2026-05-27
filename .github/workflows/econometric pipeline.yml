@@ -1,0 +1,119 @@
+# Econometric Analysis Pipeline (Full PRCSI)
+# Triggers automatically after Qualitative NLP Pipeline completes.
+# Stationarity, Granger, VAR/IRF, SHAP, builds full PRCSI from combined master.
+
+name: Econometric Analysis (Full PRCSI)
+
+on:
+  workflow_run:
+    workflows: ["Qualitative NLP Pipeline"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  econometrics:
+    name: Granger + VAR + PRCSI Index
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    env:
+      FEATURES_DIR:  data/features
+      RESULTS_DIR:   data/results
+      HISTORIC_DIR:  data/Historic
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      # Pull master_with_nlp.parquet committed by qualitative pipeline before running.
+      - name: Pull latest data from qualitative pipeline
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main || true
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install pandas numpy pyarrow scipy statsmodels \
+                       scikit-learn shap matplotlib seaborn \
+                       python-dotenv tqdm
+
+      - name: Create data directories
+        run: mkdir -p data/features data/results data/Historic
+
+      - name: Check NLP scores are available
+        run: |
+          if [ ! -f data/features/master_with_nlp.parquet ]; then
+            echo "⚠️  master_with_nlp.parquet not found"
+            echo "   Falling back to quantitative-only master dataset"
+            cp data/features/master_quant.parquet data/features/master_with_nlp.parquet || true
+          else
+            python3 - <<'EOF'
+          import pandas as pd
+          df = pd.read_parquet("data/features/master_with_nlp.parquet")
+          nlp_cols = [c for c in df.columns if any(x in c for x in
+                      ["sent_", "oil_impact", "divergence", "topic_",
+                       "finbert", "supply_disruption", "geopolitical",
+                       "demand_outlook", "institutional_confidence"])]
+          if nlp_cols:
+              print(f"✅ NLP scores found — {len(nlp_cols)} NLP columns in master dataset")
+              print(f"   Sample: {nlp_cols[:5]}")
+          else:
+              print("⚠️  master_with_nlp.parquet exists but contains NO NLP columns")
+              print("   Qualitative pipeline may not have merged scores yet")
+          print(f"   Total columns: {len(df.columns)}  |  Rows: {len(df)}")
+          EOF
+          fi
+
+      - name: Stationarity tests
+        run: python3 "scripts/quant/Quant 7 stationarity.py"
+
+      - name: Granger causality
+        run: python3 "scripts/quant/Quant 8 granger causality.py"
+
+      - name: VAR model and IRF
+        run: python3 "scripts/quant/Quant 9 var irf.py"
+
+      - name: SHAP feature importance
+        run: python3 "scripts/quant/Quant 91 shap analysis.py"
+
+      - name: Build full PRCSI index
+        run: python3 "scripts/quant/Quant 92 build full index.py"
+
+      - name: Upload econometric results
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: econometric-results-${{ github.run_number }}
+          path: data/results/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Commit results
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/results/ || true
+          git diff --staged --quiet || git commit -m "chore: econometric results $(date +%Y-%m-%d)"
+          git push || true
+
+      - name: Report status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Econometric pipeline completed successfully"
+            cat data/results/pipeline_metadata.json 2>/dev/null || true
+          else
+            echo "❌ Econometric pipeline FAILED"
+            exit 1
+          fi

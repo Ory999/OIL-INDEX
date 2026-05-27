@@ -1,0 +1,82 @@
+# Fetch WTI, VIX, USD prices from yfinance.
+# WTI is primary target variable. Gold removed from scope.
+
+import os, logging, time
+from pathlib import Path
+from datetime import datetime
+import yfinance as yf
+import numpy as np
+import pandas as pd
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s — %(message)s")
+log = logging.getLogger(__name__)
+
+START_DATE = os.getenv("START_DATE", "2007-01-01")
+END_DATE   = datetime.today().strftime("%Y-%m-%d")
+RAW_DIR    = Path(os.getenv("DATA_DIR", "data/raw"))
+RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+TICKERS = {
+    "oil": "CL=F",      # WTI Crude Futures, primary target
+    "vix": "^VIX",      # fear index, control
+    "usd": "DX-Y.NYB",  # dollar index, control
+}
+
+def fetch_prices():
+    log.info(f"Fetching prices: {START_DATE} → {END_DATE}")
+
+    raw = pd.DataFrame()
+    for attempt in range(3):
+        try:
+            raw = yf.download(
+                list(TICKERS.values()),
+                start=START_DATE,
+                end=END_DATE,
+                progress=False,
+                auto_adjust=True,
+            )
+            if len(raw) > 0:
+                break
+            log.warning(f"  Attempt {attempt+1} returned empty — retrying in 15s")
+        except Exception as e:
+            log.warning(f"  Attempt {attempt+1} failed: {e} — retrying in 15s")
+        time.sleep(15)
+
+    if len(raw) == 0:
+        log.warning("  All yfinance attempts failed — saving empty parquet")
+        pd.DataFrame().to_parquet(RAW_DIR / "prices.parquet")
+        return pd.DataFrame()
+
+    # Handle single and multi-ticker formats.
+    if isinstance(raw.columns, pd.MultiIndex):
+        prices = raw["Close"].copy()
+        prices.columns = list(TICKERS.keys())
+    else:
+        prices = raw[["Close"]].copy()
+        prices.columns = list(TICKERS.keys())
+
+    prices.index = pd.to_datetime(prices.index)
+    prices       = prices.resample("B").last().ffill()
+
+    returns = prices.pct_change()
+    returns.columns = [f"{c}_return" for c in prices.columns]
+
+    log_ret = np.log(prices / prices.shift(1))
+    log_ret.columns = [f"{c}_logret" for c in prices.columns]
+
+    df = pd.concat([prices, returns, log_ret], axis=1).dropna(how="all")
+
+    out = RAW_DIR / "prices.parquet"
+    df.to_parquet(out)
+    log.info(f"✓ Prices saved → {out}  ({len(df)} rows)")
+    log.info(f"  Columns: {list(df.columns)}")
+
+    if len(df) > 0 and "oil" in df.columns and len(df["oil"].dropna()) > 0:
+        log.info(f"  Latest oil price: ${df['oil'].iloc[-1]:.2f}")
+    else:
+        log.warning("  Price data empty — possible Yahoo rate limit")
+
+    return df
+
+if __name__ == "__main__":
+    fetch_prices()
