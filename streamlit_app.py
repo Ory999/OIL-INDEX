@@ -785,7 +785,7 @@ MA60 indicates the move has outrun the structural trend historically a mean-reve
   momentum relative to all WTI history since 2007. Tracks price more closely because
   it uses an expanding window anchored to 2007, not a rolling one-year window.
 - **Coloured bands:** Fear (blue, 0–45), Neutral (grey, 45–55), Greed (red, 55–100).
-- **Triangles:** Active signals — bearish (red, PRCSI > 50) and bullish (green,
+- **Triangles:** Active signals bearish (red, PRCSI > 50) and bullish (green,
   PRCSI < 50). Both are contrarian: institutional greed signals a fall, institutional
   fear signals a rise.
 
