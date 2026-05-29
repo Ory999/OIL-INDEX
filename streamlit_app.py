@@ -738,10 +738,10 @@ That asymmetry is the information the index is designed to surface.
 | **OPEC Monthly Oil Market Report** | Cartel production sentiment, supply outlook | Monthly |
 | **EIA Short-Term Energy Outlook** | US government demand/supply forecasts | Monthly |
 | **Saudi Aramco press coverage** | World's largest producer signals | Daily |
-| **EIA Weekly Petroleum Status** | Inventory surprise — #1 short-term price driver | Weekly |
+| **EIA Weekly Petroleum Status** | Inventory surprise  #1 short-term price driver | Weekly |
 | **CFTC Commitments of Traders** | Managed money positioning (speculators) | Weekly |
 | **FRED** | Fed funds rate, USD broad index, breakeven inflation | Daily |
-| **WTI Futures (yfinance)** | Price, returns, volatility — PSI inputs only | Daily |
+| **WTI Futures (yfinance)** | Price, returns, volatility  PSI inputs only | Daily |
 
 OPEC, EIA, and Aramco texts are scored by a locally-hosted LLM (`gpt-oss-20b`) using a locked
 system prompt validated against historic backfill. Scores cover 6 dimensions: oil impact, supply
