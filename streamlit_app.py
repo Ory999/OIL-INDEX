@@ -995,7 +995,7 @@ major supply disruptions carry higher historical reliability.
             st.plotly_chart(fig4, use_container_width=True,
                             config={"displayModeBar": False})
 
-            st.markdown("<div class='section-header'>Signal Days — most recent first</div>",
+            st.markdown("<div class='section-header'>Signal Days most recent first</div>",
                         unsafe_allow_html=True)
             disp = sig_df.copy()
             disp["Date"]      = disp.index.strftime("%Y-%m-%d")
