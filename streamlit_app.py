@@ -935,9 +935,9 @@ not update as new data arrives, preventing threshold leakage.
 | Top 2% | >= 0.3146 | 97.1% | Rare — treat as confirmation only |
 
 **Bearish vs Bullish — the contrarian logic**
-- **BEARISH** = PRCSI > 50 (institutional greed) — price predicted to fall.
+- **BEARISH** = PRCSI > 50 (institutional greed) price predicted to fall.
   Institutions overconfident, supply-side miscalculation likely, correction follows.
-- **BULLISH** = PRCSI < 50 (institutional fear) — price predicted to rise.
+- **BULLISH** = PRCSI < 50 (institutional fear) price predicted to rise.
   Institutions too cautious, undersupply developing, recovery follows.
 
 This is the opposite of equity fear and greed: here it is institutional narrative greed
