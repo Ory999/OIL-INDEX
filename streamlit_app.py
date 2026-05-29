@@ -281,30 +281,30 @@ with tab_live:
             st.markdown("""
 **Two indices, one divergence signal.**
 
-**PRCSI — Petroleum Risk & Conviction Sentiment Index**
+**PRCSI Petroleum Risk & Conviction Sentiment Index**
 Measures whether institutional sentiment is extreme relative to recent conditions.
 Built from NLP scoring of OPEC Monthly Oil Market Reports, EIA Short-Term Energy
-Outlooks, and Saudi Aramco press coverage — combined with EIA inventory data, CFTC
+Outlooks, and Saudi Aramco press coverage combined with EIA inventory data, CFTC
 futures positioning, and FRED macro controls. Normalised as a rolling 252-day
 percentile rank: a reading of 70 means institutional sentiment is more extreme than
-70% of the past year's readings — not that price is high.
+70% of the past year's readings not that price is high.
 
-**PSI — Price Sentiment Index**
+**PSI Price Sentiment Index**
 Measures whether price is historically expensive or cheap, and how extreme current
 momentum is relative to the biggest moves since 2007. Uses an expanding window
-anchored to 2007 — so $105 today is judged against every WTI price ever recorded,
+anchored to 2007 so $105 today is judged against every WTI price ever recorded,
 not just the past year.
 
-**Why they look different — and why that is correct.**
+**Why they look different and why that is correct.**
 PRCSI oscillates around 50 by design. Institutional sentiment is rarely at
-extremes — which is exactly why the top 10% threshold fires infrequently and
+extremes which is exactly why the top 10% threshold fires infrequently and
 carries 86.8% OOS directional accuracy. A signal that fires constantly would
 be useless. PSI tracks price more closely because it is anchored to the full
 price history.
 
 **The divergence between them is the core signal.** When price momentum (PSI)
 runs far ahead of institutional narrative (PRCSI), the market is moving faster
-than fundamentals justify — a classic information asymmetry setup
+than fundamentals justify a classic information asymmetry setup
 (Grossman-Stiglitz 1980). The current Hormuz spike is a live example: PSI
 surged with price, PRCSI remained moderate, and the ~21 point divergence
 flags exactly this asymmetry.
@@ -327,7 +327,7 @@ influenced by prevailing sentiment. Greedy institutions tend to over-supply;
 fearful ones under-supply.
 
 **Do not read PRCSI like a price chart.**
-PRCSI does not track price — that is PSI's job. PRCSI asks: is sentiment extreme
+PRCSI does not track price that is PSI's job. PRCSI asks: is sentiment extreme
 *relative to recent history*? PSI asks: is price extreme *relative to all history
 since 2007*? They answer different questions. The gap between them — the divergence
 — is where the predictive content lives.
