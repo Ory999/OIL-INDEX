@@ -435,7 +435,7 @@ top 10% severity threshold over a 21-day forward horizon.
         st.markdown(
             "<div style='text-align:center; font-family:DM Mono; font-size:0.62rem;"
             " letter-spacing:0.14em; opacity:0.36; text-transform:uppercase;"
-            " margin-bottom:0.15rem;'>PSI — Price Action</div>",
+            " margin-bottom:0.15rem;'>PSI:  Price Action</div>",
             unsafe_allow_html=True,
         )
         psi_ok = psi_df is not None and len(psi_df) > 0
