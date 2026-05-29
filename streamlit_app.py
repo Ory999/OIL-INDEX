@@ -329,8 +329,8 @@ fearful ones under-supply.
 **Do not read PRCSI like a price chart.**
 PRCSI does not track price that is PSI's job. PRCSI asks: is sentiment extreme
 *relative to recent history*? PSI asks: is price extreme *relative to all history
-since 2007*? They answer different questions. The gap between them — the divergence
-— is where the predictive content lives.
+since 2007*? They answer different questions. The gap between them the divergence
+is where the predictive content lives.
 
 **Validated OOS accuracy (2020–2026):** 86.8% directional accuracy at the
 top 10% severity threshold over a 21-day forward horizon.
