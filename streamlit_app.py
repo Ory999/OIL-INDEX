@@ -717,7 +717,7 @@ readings* regardless of whether the absolute price is $60 or $130.
 
 The 86.8% OOS directional accuracy was validated on exactly this normalisation.
 If PRCSI tracked price, it would converge with PSI and the divergence between them
-would carry no information. The entire thesis — that institutions have an information
+would carry no information. The entire thesis that institutions have an information
 advantage that creates predictable asymmetry relative to price momentum
 (Grossman-Stiglitz 1980) depends on PRCSI and PSI measuring different things.
 
