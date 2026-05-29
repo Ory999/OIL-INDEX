@@ -709,9 +709,9 @@ top 10% severity threshold over a 21-day forward horizon.
 
 PRCSI normalises each feature as a percentile rank within the trailing 252 trading days.
 By construction, roughly half the values in any rolling window will be above the median
-and half below — so the index gravitates toward 50. This is not a bug. It means a reading
+and half below so the index gravitates toward 50. This is not a bug. It means a reading
 of 65 tells you: *institutional sentiment is more bullish than 65% of the past year's
-readings* — regardless of whether the absolute price is $60 or $130.
+readings* regardless of whether the absolute price is $60 or $130.
 
 **Why this is the correct design for a contrarian signal**
 
@@ -719,7 +719,7 @@ The 86.8% OOS directional accuracy was validated on exactly this normalisation.
 If PRCSI tracked price, it would converge with PSI and the divergence between them
 would carry no information. The entire thesis — that institutions have an information
 advantage that creates predictable asymmetry relative to price momentum
-(Grossman-Stiglitz 1980) — depends on PRCSI and PSI measuring different things.
+(Grossman-Stiglitz 1980) depends on PRCSI and PSI measuring different things.
 
 **The divergence is the signal, not the individual levels**
 
@@ -775,13 +775,13 @@ with tab_history:
 Raw daily closing price with moving averages MA14/MA30/MA60. A price sustained above
 MA60 indicates the move has outrun the structural trend — historically a mean-reversion setup.
 
-**Middle panel — PRCSI and PSI**
-- **White line (PRCSI):** Institutional narrative sentiment — how extreme is current
+**Middle panel PRCSI and PSI**
+- **White line (PRCSI):** Institutional narrative sentiment how extreme is current
   sentiment relative to the past 252 trading days. Oscillates around 50 by design:
   this is correct behaviour, not a visual artifact. Institutional sentiment is rarely
   at extremes, which is why signals fire infrequently and carry high accuracy when
   they do.
-- **Orange dotted (PSI):** Price action sentiment — how extreme is current price and
+- **Orange dotted (PSI):** Price action sentiment how extreme is current price and
   momentum relative to all WTI history since 2007. Tracks price more closely because
   it uses an expanding window anchored to 2007, not a rolling one-year window.
 - **Coloured bands:** Fear (blue, 0–45), Neutral (grey, 45–55), Greed (red, 55–100).
@@ -789,14 +789,14 @@ MA60 indicates the move has outrun the structural trend — historically a mean-
   PRCSI < 50). Both are contrarian: institutional greed signals a fall, institutional
   fear signals a rise.
 
-**PRCSI and PSI measure different things — the gap between them is the signal.**
+**PRCSI and PSI measure different things the gap between them is the signal.**
 When PSI runs well above PRCSI, price is moving faster than institutional narrative
 justifies. This information asymmetry (Grossman-Stiglitz 1980) has historically
 preceded reversals. When they converge, the asymmetry has closed.
-The May 2026 Hormuz spike — PSI ~74, PRCSI ~50, divergence ~21 points — is a
+The May 2026 Hormuz spike PSI ~74, PRCSI ~50, divergence ~21 points — is a
 live case study of this dynamic.
 
-**Bottom panel — Signal Severity**
+**Bottom panel Signal Severity**
 `Severity = |PRCSI − 50| × 2`. Bars turn red above 0.2637, the train-frozen top 10% threshold.
 Only red bars correspond to active signals with validated directional accuracy.
 """)
