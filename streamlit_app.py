@@ -773,7 +773,7 @@ with tab_history:
         st.markdown("""
 **Top panel — WTI Oil Price (USD)**
 Raw daily closing price with moving averages MA14/MA30/MA60. A price sustained above
-MA60 indicates the move has outrun the structural trend — historically a mean-reversion setup.
+MA60 indicates the move has outrun the structural trend historically a mean-reversion setup.
 
 **Middle panel PRCSI and PSI**
 - **White line (PRCSI):** Institutional narrative sentiment how extreme is current
