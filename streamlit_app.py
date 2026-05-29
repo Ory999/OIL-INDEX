@@ -917,7 +917,7 @@ Only red bars correspond to active signals with validated directional accuracy.
 
 # TAB 3, SIGNAL LOG
 with tab_signals:
-    st.markdown("<div class='section-header'>Signal History — All Active Signal Days</div>",
+    st.markdown("<div class='section-header'>Signal History All Active Signal Days</div>",
                 unsafe_allow_html=True)
 
     with st.expander("How signals work", expanded=False):
