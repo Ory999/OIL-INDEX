@@ -771,7 +771,7 @@ with tab_history:
 
     with st.expander("How to read this chart", expanded=False):
         st.markdown("""
-**Top panel — WTI Oil Price (USD)**
+**Top panel WTI Oil Price (USD)**
 Raw daily closing price with moving averages MA14/MA30/MA60. A price sustained above
 MA60 indicates the move has outrun the structural trend historically a mean-reversion setup.
 
