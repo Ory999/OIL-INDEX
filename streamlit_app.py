@@ -725,7 +725,7 @@ advantage that creates predictable asymmetry relative to price momentum
 
 When PSI runs well above PRCSI, price is moving faster than institutional narrative
 justifies. This gap has historically preceded reversals over a 21–42 trading day horizon.
-The May 2026 Hormuz case is a live example: PSI ~74, PRCSI ~50, divergence ~21 points —
+The May 2026 Hormuz case is a live example: PSI ~74, PRCSI ~50, divergence ~21 points
 price spiked from ~$56 to $111+, but institutional communications remained measured.
 That asymmetry is the information the index is designed to surface.
 """)
