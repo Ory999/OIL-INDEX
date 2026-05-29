@@ -311,7 +311,7 @@ flags exactly this asymmetry.
 """)
         with cb:
             st.markdown("""
-**Fear and Greed in oil — different from stocks.**
+**Fear and Greed in oil different from stocks.**
 
 In equity markets, fear and greed indices are momentum indicators:
 high greed = overbought = caution. Oil works differently.
