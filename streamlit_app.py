@@ -793,7 +793,7 @@ MA60 indicates the move has outrun the structural trend historically a mean-reve
 When PSI runs well above PRCSI, price is moving faster than institutional narrative
 justifies. This information asymmetry (Grossman-Stiglitz 1980) has historically
 preceded reversals. When they converge, the asymmetry has closed.
-The May 2026 Hormuz spike PSI ~74, PRCSI ~50, divergence ~21 points — is a
+The May 2026 Hormuz spike PSI ~74, PRCSI ~50, divergence ~21 points is a
 live case study of this dynamic.
 
 **Bottom panel Signal Severity**
