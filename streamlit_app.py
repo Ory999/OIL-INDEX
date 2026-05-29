@@ -766,7 +766,7 @@ days carry the most recent publication forward with a 21-day maximum fill.
 
 # TAB 2, HISTORICAL CHART
 with tab_history:
-    st.markdown("<div class='section-header'>Full History — 2007 to Present</div>",
+    st.markdown("<div class='section-header'>Full History 2007 to Present</div>",
                 unsafe_allow_html=True)
 
     with st.expander("How to read this chart", expanded=False):
