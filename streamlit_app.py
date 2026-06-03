@@ -947,10 +947,10 @@ that is the sell signal, not price momentum greed.
 
 **Horizon:** 21–42 trading days. Not a day-trading signal.
 
-**Regime sensitivity:** OOS accuracy was 98.7% in volatile regimes (2020–2022)
-and 64.1% in stable regimes (2023–2026). Signals during geopolitical shocks or
-major supply disruptions carry higher historical reliability.
-""")
+**Regime sensitivity:** In the frozen calibration, OOS accuracy was 98.7% in
+volatile regimes (2020–2022) and 64.1% in stable regimes (2023–2026); the
+reproducible top-10% figure (74.8% at 21d) blends both regimes. Signals during
+geopolitical shocks or major supply disruptions carry higher historical reliability.
     st.markdown("")
 
     if df is not None and "signal_active" in df.columns:
