@@ -13,16 +13,19 @@ The PRCSI reads official institutional publications (OPEC Monthly Oil Market Rep
 
 The index is contrarian. High readings (greed) predict price falls. When severity exceeds the train-frozen 90th percentile threshold (0.2637), a directional signal is issued.
 
-Validated out-of-sample performance, 2020 to 2026, 21-day horizon:
+Validated out-of-sample performance, 2020 to 2026:
 
-| Signal tier | Full-sample accuracy | OOS accuracy | Independent blocks |
+| Signal tier | In-sample accuracy | OOS accuracy (21d) | OOS accuracy (42d) |
 |---|---|---|---|
-| Top 10% | 67.7% | **86.8%** | 5 |
-| Top 5% | 80.3% | 96.5% | 2, exploratory |
+| Top 10% (primary) | 67.7% | **74.8%** | **82.4%** |
+| Top 5% (exploratory) | 80.3% | 96.5%* | — |
+| Top 2% (rare) | 84.4% | 97.1%* | — |
 
-Block bootstrap p < 0.001. Price-based contrarian baseline 49.9%.
+Top-10% OOS figures are recomputed directly from the released `prcsi_final` series (89/119 correct at 21d, 98/119 at 42d). Block bootstrap p < 0.001. Price-based contrarian baseline 49.9%. A frozen training-period calibration reported a higher 86.8% at the top-10% tier, but that figure derives from a notebook block construction that is not committed and does not regenerate from this pipeline; the conservative reproducible figure is used here.
 
-> Not financial advice. The index is for research purposes only. Horizon is 21 to 42 trading days, not a day-trading signal. OOS accuracy is regime-sensitive (98.7% in volatile periods, 64.1% in stable).
+> *Top-5% and Top-2% OOS figures are from the frozen calibration and are not independently reproduced from the released series; treat as indicative.
+
+> Not financial advice. Research purposes only. Horizon is 21 to 42 trading days, not a day-trading signal. OOS accuracy is regime-sensitive: in the frozen calibration it was markedly higher in volatile periods (2020–2022) than in stable ones (2023–2026).
 
 ---
 
@@ -173,7 +176,7 @@ Total NLP corpus: 695 documents scored against the locked system prompt.
 ## Limitations
 
 - **Single OOS era.** Results tested on 2020 to 2026 only; performance in other regimes is unknown.
-- **Regime sensitivity.** Accuracy was 98.7% in volatile periods (2020 to 2022) and 64.1% in stable periods (2023 to 2026).
+- **Regime sensitivity.** In the frozen calibration, accuracy was 98.7% in volatile periods (2020 to 2022) and 64.1% in stable periods (2023 to 2026); the reproducible top-10% figure (74.8% at 21d) is a blended-regime number and should be read as regime-dependent.
 - **NLP freshness.** Only around 5.5% of daily values are genuine publication-day data; the rest are forward-filled (21 days for raw LLM signals, 5 days for momentum features).
 - **Macro orthogonalisation.** OLS p-values are inflated by overlapping returns; HAC-corrected p = 0.2313 (not formally significant), block bootstrap p < 0.001.
 - **Direction only.** The index predicts direction, not magnitude or timing within the horizon.
