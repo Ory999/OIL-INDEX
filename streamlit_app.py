@@ -335,6 +335,7 @@ is where the predictive content lives.
 **Validated OOS accuracy (2020–2026):** 74.8% directional accuracy at the
 top 10% severity threshold over a 21-day horizon (82.4% over 42 days),
 recomputed from the released index series. Baseline 49.9%.
+""")
 
     # Gauges, PRCSI, divergence, PSI.
     col_prcsi, col_div, col_psi = st.columns([1, 0.6, 1])
@@ -934,7 +935,7 @@ not update as new data arrives, preventing threshold leakage.
 | Top 5% | >= 0.2879 | 96.5%* | Exploratory, frozen-calibration figure |
 | Top 2% | >= 0.3146 | 97.1%* | Rare, frozen-calibration figure |
 
-\*Top-5% and Top-2% figures are from the frozen calibration and are not reproduced from the released series.
+\\*Top-5% and Top-2% figures are from the frozen calibration and are not reproduced from the released series.
 
 **Bearish vs Bullish — the contrarian logic**
 - **BEARISH** = PRCSI > 50 (institutional greed) price predicted to fall.
@@ -951,6 +952,7 @@ that is the sell signal, not price momentum greed.
 volatile regimes (2020–2022) and 64.1% in stable regimes (2023–2026); the
 reproducible top-10% figure (74.8% at 21d) blends both regimes. Signals during
 geopolitical shocks or major supply disruptions carry higher historical reliability.
+""")
     st.markdown("")
 
     if df is not None and "signal_active" in df.columns:
