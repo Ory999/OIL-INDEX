@@ -306,7 +306,7 @@ price history.
 runs far ahead of institutional narrative (PRCSI), the market is moving faster
 than fundamentals justify a classic information asymmetry setup
 (Grossman-Stiglitz 1980). The current Hormuz spike is a live example: PSI
-surged with price, PRCSI remained moderate, and the ~21 point divergence
+surged with price, PRCSI remained moderate, and the ~24 point divergence
 flags exactly this asymmetry.
 """)
         with cb:
@@ -725,7 +725,7 @@ advantage that creates predictable asymmetry relative to price momentum
 
 When PSI runs well above PRCSI, price is moving faster than institutional narrative
 justifies. This gap has historically preceded reversals over a 21–42 trading day horizon.
-The May 2026 Hormuz case is a live example: PSI ~74, PRCSI ~50, divergence ~21 points
+The May 2026 Hormuz case is a live example: PSI ~74, PRCSI ~50, divergence ~24 points
 price spiked from ~$56 to $111+, but institutional communications remained measured.
 That asymmetry is the information the index is designed to surface.
 """)
@@ -793,7 +793,7 @@ MA60 indicates the move has outrun the structural trend historically a mean-reve
 When PSI runs well above PRCSI, price is moving faster than institutional narrative
 justifies. This information asymmetry (Grossman-Stiglitz 1980) has historically
 preceded reversals. When they converge, the asymmetry has closed.
-The May 2026 Hormuz spike PSI ~74, PRCSI ~50, divergence ~21 points is a
+The May 2026 Hormuz spike PSI ~74, PRCSI ~50, divergence ~24 points is a
 live case study of this dynamic.
 
 **Bottom panel Signal Severity**
