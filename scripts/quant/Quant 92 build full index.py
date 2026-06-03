@@ -82,9 +82,18 @@ STABLE_FEATURES = [
     "geopolitical_risk_signal",
 ]
 
-# Historical accuracy by tier, validated OOS 2020 to 2026.
+# Top-tier accuracy, OOS 2020 to 2026, recomputed directly from the released
+# prcsi_final series at the 21-day forward horizon (89/119 correct = 0.748;
+# 98/119 = 0.824 at 42d). The earlier 0.868 came from a notebook block
+# construction that is not committed and does not regenerate from this pipeline,
+# so the conservative reproducible figure is used here and on the dashboard.
 TIER_ACCURACY = {
-    "top_10": {"full_sample": 0.677, "oos": 0.868, "volatile": 0.987, "stable": 0.641},
+    # 21d OOS = 0.748 reproducible (89/119); 42d OOS = 0.824 (98/119).
+    # volatile / stable are frozen-calibration figures, not reproduced here.
+    "top_10": {"full_sample": 0.677, "oos": 0.748, "oos_42d": 0.824,
+               "volatile": 0.987, "stable": 0.641},
+    # top_5 / top_2 OOS are frozen-calibration figures, not independently
+    # reproduced from the released series; treat as indicative only.
     "top_5":  {"full_sample": 0.803, "oos": 0.965},
     "top_2":  {"full_sample": 0.844, "oos": 0.971},
 }
@@ -309,6 +318,7 @@ def build_full_index():
         "signal_horizon_days":    [21, 42],
         "tier_accuracy_full":     tier_acc.get("full_sample"),
         "tier_accuracy_oos":      tier_acc.get("oos"),
+        "tier_accuracy_oos_42d":  tier_acc.get("oos_42d"),
         # NLP freshness
         "nlp_is_fresh":           latest_fresh,
         # Signal cadence
@@ -320,7 +330,7 @@ def build_full_index():
         "full_run_timestamp":     datetime.now().isoformat(),
         # Methodology note
         "index_method":           "rolling_percentile_ema63_stable9_contrarian",
-        "validated_oos_accuracy": "86.8% top-10% OOS (21d horizon, 5 independent blocks)",
+        "validated_oos_accuracy": "74.8% top-10% OOS at 21d (82.4% at 42d), reproduced from released series; baseline 49.9%, bootstrap p<0.001",
     })
 
     with open(meta_path, "w") as f:
