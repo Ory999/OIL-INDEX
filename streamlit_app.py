@@ -928,11 +928,13 @@ of all severity readings in the 2007–2019 training period. This threshold is f
 not update as new data arrives, preventing threshold leakage.
 
 **Signal tiers**
-| Tier | Severity | OOS accuracy | Note |
+| Tier | Severity | OOS accuracy (21d) | Note |
 |---|---|---|---|
-| Top 10% | >= 0.2637 | **86.8%** | 5 independent blocks — primary validated tier |
-| Top 5% | >= 0.2879 | 96.5% | 2 blocks — exploratory |
-| Top 2% | >= 0.3146 | 97.1% | Rare — treat as confirmation only |
+| Top 10% | >= 0.2637 | **74.8%** (82.4% at 42d) | Primary validated tier, reproducible from released series |
+| Top 5% | >= 0.2879 | 96.5%* | Exploratory, frozen-calibration figure |
+| Top 2% | >= 0.3146 | 97.1%* | Rare, frozen-calibration figure |
+
+\*Top-5% and Top-2% figures are from the frozen calibration and are not reproduced from the released series.
 
 **Bearish vs Bullish — the contrarian logic**
 - **BEARISH** = PRCSI > 50 (institutional greed) price predicted to fall.
