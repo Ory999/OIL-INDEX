@@ -298,7 +298,7 @@ not just the past year.
 **Why they look different and why that is correct.**
 PRCSI oscillates around 50 by design. Institutional sentiment is rarely at
 extremes which is exactly why the top 10% threshold fires infrequently and
-carries 86.8% OOS directional accuracy. A signal that fires constantly would
+carries 74.8% OOS directional accuracy at the 21-day horizon (82.4% at 42 days). A signal that fires constantly would
 be useless. PSI tracks price more closely because it is anchored to the full
 price history.
 
@@ -332,9 +332,9 @@ PRCSI does not track price that is PSI's job. PRCSI asks: is sentiment extreme
 since 2007*? They answer different questions. The gap between them the divergence
 is where the predictive content lives.
 
-**Validated OOS accuracy (2020–2026):** 86.8% directional accuracy at the
-top 10% severity threshold over a 21-day forward horizon.
-""")
+**Validated OOS accuracy (2020–2026):** 74.8% directional accuracy at the
+top 10% severity threshold over a 21-day horizon (82.4% over 42 days),
+recomputed from the released index series. Baseline 49.9%.
 
     # Gauges, PRCSI, divergence, PSI.
     col_prcsi, col_div, col_psi = st.columns([1, 0.6, 1])
@@ -715,7 +715,7 @@ readings* regardless of whether the absolute price is $60 or $130.
 
 **Why this is the correct design for a contrarian signal**
 
-The 86.8% OOS directional accuracy was validated on exactly this normalisation.
+The 74.8% OOS directional accuracy (21-day; 82.4% at 42 days) was validated on exactly this normalisation.
 If PRCSI tracked price, it would converge with PSI and the divergence between them
 would carry no information. The entire thesis that institutions have an information
 advantage that creates predictable asymmetry relative to price momentum
