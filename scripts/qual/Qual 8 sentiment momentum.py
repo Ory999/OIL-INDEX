@@ -144,7 +144,7 @@ def run_sentiment_momentum():
     out         = RAW_DIR / "sentiment_features.parquet"
 
     if not corpus_path.exists():
-        log.warning("corpus_with_topics.parquet not found — run 21 bertopic clustering.py first")
+        log.warning("corpus_with_topics.parquet not found — run Qual 5 bertopic clustering.py first")
         return pd.DataFrame()
 
     corpus = pd.read_parquet(corpus_path)
