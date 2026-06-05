@@ -39,10 +39,10 @@ def assemble_master():
     cot     = load_parquet(RAW_DIR / "cot_crude.parquet",        "COT")
 
     if prices is None or len(prices) == 0:
-        raise RuntimeError("prices.parquet is empty or missing — check 01 fetch prices.py")
+        raise RuntimeError("prices.parquet is empty or missing — Quant 1 fetch prices.py")
 
     if "oil_logret" not in prices.columns:
-        raise RuntimeError("oil_logret column missing from prices — check 01 fetch prices.py")
+        raise RuntimeError("oil_logret column missing from prices — Quant 1 fetch prices.py")
 
     # Business day spine, prices always available.
     master = prices.copy()
