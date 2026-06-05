@@ -41,7 +41,7 @@
   "prcsi_quant_regime": "NEUTRAL",
   "quant_pipeline_complete": true,
   "quant_run_timestamp": "2026-06-05T09:01:19.522446",
-  "nlp_scores_merged": false,
+  "nlp_scores_merged": true,
   "psi_latest": 66.46,
   "psi_regime": "GREED",
   "psi_date": "2026-06-04",
@@ -58,5 +58,14 @@
   "divergence": -0.1864,
   "divergence_abs": 0.1864,
   "divergence_direction": "PSI_LEADS",
-  "divergence_pct_pts": -18.6
+  "divergence_pct_pts": -18.6,
+  "nlp_merge_timestamp": "2026-06-05T16:15:26.646454",
+  "nlp_coverage_pct": 71.32,
+  "n_nlp_features": 40,
+  "n_raw_llm_features": 6,
+  "n_momentum_features": 34,
+  "n_combined_features": 68,
+  "n_combined_rows": 5065,
+  "combined_date_start": "2007-01-03",
+  "combined_date_end": "2026-06-04"
 }
