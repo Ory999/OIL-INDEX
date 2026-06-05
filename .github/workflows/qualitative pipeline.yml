@@ -67,9 +67,6 @@ jobs:
 
       # FinBERT removed from active pipeline, retained for r=0.13 paper baseline.
       # continue-on-error so failure does not block LLM scoring or downstream steps.
-      - name: FinBERT Baseline Scoring (legacy — paper baseline only)
-        run: python3 "scripts/qual/19 finbert scoring.py"
-        continue-on-error: true
 
       - name: LLM Multidimensional Scoring
         run: python3 "scripts/qual/Qual 6 llm scoring.py"
