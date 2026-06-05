@@ -52,8 +52,8 @@ Quantitative Pipeline (cron 06:00 UTC, Mon–Fri)
 Qualitative NLP Pipeline (cron 06:30 UTC, Mon–Fri)
   ├── Qual 1 Collect opec.py                            OPEC MOMR PDFs
   ├── Qual 4 collect aramco.py                          Aramco news via Google RSS
-  ├── Qual 2 Collect opec.py and collect eia steo.py    EIA STEO PDFs
-  ├── Qual 3 Collect opec.py and build corpus.py        Merge into combined corpus
+  ├── Qual 2 eia steo.py                                EIA STEO PDFs
+  ├── Qual 3 Build corpus                               Merge into combined corpus
   ├── Qual 6 llm scoring.py                             LLM multidimensional scoring
   ├── Qual 5 bertopic clustering.py                     Topic discovery (pre-fitted model)
   ├── Qual 8 sentiment momentum.py                      EMA/RSI/acceleration features
