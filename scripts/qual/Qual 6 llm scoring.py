@@ -273,12 +273,12 @@ def run_llm_scoring():
     out         = RAW_DIR / "llm_scores.parquet"
 
     if not corpus_path.exists():
-        log.warning("combined_corpus.parquet not found — run 18 build corpus.py first")
+        log.warning("combined_corpus.parquet not found — run Qual 3 Build corpus.py first")
         return pd.DataFrame()
 
     corpus = pd.read_parquet(corpus_path)
     if len(corpus) == 0:
-        log.warning("combined_corpus.parquet is empty — run 18 build corpus.py first")
+        log.warning("combined_corpus.parquet is empty — run Qual 3 Build corpus.py first")
         return pd.DataFrame()
 
     corpus["date"] = pd.to_datetime(corpus["date"]).dt.tz_localize(None).dt.normalize()
@@ -431,7 +431,7 @@ def _save_full_output(corpus: pd.DataFrame,
     if "text_clean" in result.columns:
         log.info(f"  text_clean column present ✓ ({result['text_clean'].notna().sum()} non-null)")
     else:
-        log.warning("  text_clean column MISSING — script 21 will fail")
+        log.warning("  text_clean column MISSING — Qual 7 merge nlp master.py will fail")
     if "prompt_version" in result.columns:
         vc = result["prompt_version"].value_counts()
         log.info(f"  Prompt versions in output: {vc.to_dict()}")
