@@ -40,7 +40,7 @@ def rolling_percentile(series: pd.Series, window: int = NORM_WINDOW) -> pd.Serie
 def build_quant_index():
     master_path = FEATURES_DIR / "master_quant.parquet"
     if not master_path.exists():
-        raise FileNotFoundError(f"{master_path} not found — run 06 assemble master.py first")
+        raise FileNotFoundError(f"{master_path} not found — Quant 5 assemble master.py")
 
     master = pd.read_parquet(master_path)
     master.index = pd.to_datetime(master.index)
