@@ -238,36 +238,36 @@ def _build_psi_chart(result: pd.DataFrame):
     )
 
     ax1 = axes[0]
-    ax1.plot(result.index, result["oil_price"], color="#f97316", linewidth=1.0)
-    for days, col, lbl in [(14,"#fbbf24","MA14"),(30,"#fb923c","MA30"),(60,"#e11d48","MA60")]:
-        ma = result["oil_price"].rolling(days, min_periods=int(days*0.5)).mean()
-        ax1.plot(result.index, ma, linewidth=0.7, alpha=0.7, label=lbl)
-    ax1.set_ylabel("WTI (USD)", fontsize=9)
-    ax1.legend(fontsize=7, loc="upper left")
-    ax1.grid(alpha=0.2)
+        ax1.plot(result.index, result["oil_price"], color="#f97316", linewidth=1.0)
+        for days, col, lbl in [(14,"#fbbf24","MA14"),(30,"#fb923c","MA30"),(60,"#e11d48","MA60")]:
+            ma = result["oil_price"].rolling(days, min_periods=int(days*0.5)).mean()
+            ax1.plot(result.index, ma, linewidth=0.7, alpha=0.7, label=lbl)
+        ax1.set_ylabel("WTI (USD)", fontsize=9)
+        ax1.legend(fontsize=7, loc="upper left")
+        ax1.grid(alpha=0.2)
 
-    ax2 = axes[1]
-    for y0, y1, clr in [(0,25,"#0d1f5c"),(25,45,"#1e3f8a"),(45,55,"#1f2937"),
-                         (55,75,"#7c2d12"),(75,100,"#450a0a")]:
-        ax2.axhspan(y0, y1, alpha=0.25, color=clr, linewidth=0)
-    ax2.plot(result.index, result["psi"], color="#f9fafb", linewidth=1.4, label="PSI")
-    ax2.axhline(50, color="gray", linewidth=0.8, linestyle=":")
-    ax2.set_ylim(0, 100)
-    ax2.set_ylabel("PSI", fontsize=9)
-    ax2.grid(alpha=0.2)
+        ax2 = axes[1]
+        for y0, y1, clr in [(0,25,"#0d1f5c"),(25,45,"#1e3f8a"),(45,55,"#1f2937"),
+                             (55,75,"#7c2d12"),(75,100,"#450a0a")]:
+            ax2.axhspan(y0, y1, alpha=0.25, color=clr, linewidth=0)
+        ax2.plot(result.index, result["psi"], color="#f9fafb", linewidth=1.4, label="PSI")
+        ax2.axhline(50, color="gray", linewidth=0.8, linestyle=":")
+        ax2.set_ylim(0, 100)
+        ax2.set_ylabel("PSI", fontsize=9)
+        ax2.grid(alpha=0.2)
 
-    ax3 = axes[2]
-    ax3.plot(result.index, result["comp_fg_3m"] * 100,
-             color="#60a5fa", linewidth=1.0, label="3M (2×)")
-    ax3.plot(result.index, result["comp_fg_1w"] * 100,
-             color="#a78bfa", linewidth=0.8, alpha=0.8, label="1W (1.5×)")
-    ax3.plot(result.index, result["comp_fg_1d"] * 100,
-             color="#f9a8d4", linewidth=0.6, alpha=0.6, label="1D (1×)")
-    ax3.axhline(50, color="gray", linewidth=0.8, linestyle=":")
-    ax3.set_ylim(0, 100)
-    ax3.set_ylabel("Components", fontsize=9)
-    ax3.legend(fontsize=7, loc="upper left")
-    ax3.grid(alpha=0.2)
+        ax3 = axes[2]
+        ax3.plot(result.index, result["comp_fg_3m"] * 100,
+                 color="#60a5fa", linewidth=1.0, label="3M (1.5×)")
+        ax3.plot(result.index, result["comp_fg_1w"] * 100,
+                 color="#a78bfa", linewidth=0.8, alpha=0.8, label="1W (0.75×)")
+        ax3.plot(result.index, result["comp_fg_1d"] * 100,
+                 color="#f9a8d4", linewidth=0.6, alpha=0.6, label="1D (0.25×)")
+        ax3.axhline(50, color="gray", linewidth=0.8, linestyle=":")
+        ax3.set_ylim(0, 100)
+        ax3.set_ylabel("Components", fontsize=9)
+        ax3.legend(fontsize=7, loc="upper left")
+        ax3.grid(alpha=0.2)
 
     plt.tight_layout()
     plt.savefig(RESULTS_DIR / "psi_dashboard.png", dpi=150, bbox_inches="tight")
