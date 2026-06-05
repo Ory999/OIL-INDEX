@@ -96,7 +96,7 @@ def run_bertopic_clustering():
     out      = RAW_DIR / "corpus_with_topics.parquet"
 
     if not llm_path.exists():
-        log.warning("llm_scores.parquet not found — run 20 llm scoring.py first")
+        log.warning("llm_scores.parquet not found — run Qual 6 llm scoring.py first")
         return pd.DataFrame()
 
     corpus = pd.read_parquet(llm_path)
@@ -105,7 +105,7 @@ def run_bertopic_clustering():
         return pd.DataFrame()
 
     if "text_clean" not in corpus.columns:
-        log.warning("text_clean column missing from llm_scores.parquet — check script 20 output")
+        log.warning("text_clean column missing from llm_scores.parquet — check Qual 6 llm scoring.py output")
         return pd.DataFrame()
 
     corpus["date"] = pd.to_datetime(corpus["date"]).dt.tz_localize(None).dt.normalize()
