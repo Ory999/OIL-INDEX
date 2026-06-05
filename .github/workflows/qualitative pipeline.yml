@@ -60,10 +60,10 @@ jobs:
         run: python3 "scripts/qual/Qual 4 collect aramco.py"
 
       - name: Collect EIA STEO Narratives
-        run: python3 "scripts/qual/Qual 2 Collect opec.py and collect eia steo.py"
+        run: python3 "scripts/qual/Qual 2 eia steo.py"
 
       - name: Build Combined Corpus
-        run: python3 "scripts/qual/Qual 3 Collect opec.py and build corpus.py"
+        run: python3 "scripts/qual/Qual 3 Build corpus"
 
       # FinBERT removed from active pipeline, retained for r=0.13 paper baseline.
       # continue-on-error so failure does not block LLM scoring or downstream steps.
