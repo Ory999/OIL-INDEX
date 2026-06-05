@@ -1,25 +1,19 @@
 feature,best_lag,f_stat,p_value,significant,direction,n_obs,scope,group
 breakeven_10yr,7,5.8704,1e-06,True,-,820,full_sample_descriptive,Macro Controls
 fed_funds_rate,7,4.8341,2.4e-05,True,-,820,full_sample_descriptive,Macro Controls
-sent_roc_3d,7,3.9281,0.000278,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_roc_7d,1,12.4791,0.000415,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
 fed_funds_rate_diff,10,3.1956,0.000488,True,-,820,full_sample_descriptive,Macro Controls
-sent_ema_fast,10,3.0977,0.000608,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_ema_slow,5,4.2407,0.000754,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_roc_1d,3,5.5611,0.000831,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_velocity,3,5.5611,0.000831,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-crude_stocks_change,4,4.6937,0.000882,True,+,5053,full_sample_descriptive,EIA Fundamentals
-sent_ema_cross,1,11.0109,0.000912,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-refinery_util_pct,3,5.3906,0.001058,True,-,5053,full_sample_descriptive,EIA Fundamentals
-crude_stocks_mbbl_diff,8,2.9768,0.002502,True,+,5053,full_sample_descriptive,EIA Fundamentals
-crude_stocks_mbbl,9,2.79,0.0029,True,+,5053,full_sample_descriptive,EIA Fundamentals
+crude_stocks_change,4,4.7204,0.000841,True,+,5057,full_sample_descriptive,EIA Fundamentals
+refinery_util_pct,3,5.3139,0.001179,True,-,5057,full_sample_descriptive,EIA Fundamentals
+crude_stocks_mbbl_diff,8,3.0864,0.001785,True,+,5057,full_sample_descriptive,EIA Fundamentals
+crude_stocks_mbbl,9,2.8731,0.002195,True,+,5057,full_sample_descriptive,EIA Fundamentals
 tips_10yr,7,3.0398,0.003675,True,-,820,full_sample_descriptive,Macro Controls
-eia_surprise_norm,2,5.4887,0.004158,True,-,5053,full_sample_descriptive,EIA Fundamentals
-sent_accel,10,2.4001,0.0077,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-eia_surprise,4,3.4706,0.007735,True,+,5053,full_sample_descriptive,EIA Fundamentals
-sent_rsi,1,6.4244,0.011286,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
+eia_surprise_norm,2,5.51,0.004071,True,-,5057,full_sample_descriptive,EIA Fundamentals
+eia_surprise,4,3.4934,0.007433,True,+,5057,full_sample_descriptive,EIA Fundamentals
+sent_roc_3d,1,6.1836,0.012926,True,+,5053,full_sample_descriptive,NLP Sentiment Momentum
 tips_10yr_diff,10,2.1205,0.020878,True,-,820,full_sample_descriptive,Macro Controls
-sent_roc_14d,1,5.2434,0.022071,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
 usd_logret,3,3.0783,0.026888,True,-,820,full_sample_descriptive,Macro Controls
+sent_ema_fast,3,2.9323,0.032215,True,+,5053,full_sample_descriptive,NLP Sentiment Momentum
 vix_logret,2,3.0964,0.045744,True,-,820,full_sample_descriptive,Macro Controls
+sent_rsi,1,3.9422,0.047144,True,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+sent_ema_slow,2,3.0454,0.047667,True,+,5053,full_sample_descriptive,NLP Sentiment Momentum
 cot_net_long,1,3.9014,0.048321,True,+,3735,full_sample_descriptive,COT Positioning

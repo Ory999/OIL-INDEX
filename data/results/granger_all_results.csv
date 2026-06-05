@@ -1,25 +1,25 @@
 feature,best_lag,f_stat,p_value,significant,direction,n_obs,scope,group
-sent_roc_3d,7,3.9281,0.000278,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_roc_7d,1,12.4791,0.000415,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_ema_fast,10,3.0977,0.000608,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_ema_slow,5,4.2407,0.000754,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_roc_1d,3,5.5611,0.000831,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_velocity,3,5.5611,0.000831,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_ema_cross,1,11.0109,0.000912,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_accel,10,2.4001,0.0077,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_rsi,1,6.4244,0.011286,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-sent_roc_14d,1,5.2434,0.022071,True,+,5051,full_sample_descriptive,NLP Sentiment Momentum
-divergence_ema,3,2.1285,0.094425,False,+,5062,full_sample_descriptive,LLM Divergence
-surface_vs_implied_divergence,1,2.2987,0.129541,False,+,5062,full_sample_descriptive,LLM Divergence
-divergence_roc,5,1.3723,0.231342,False,-,5062,full_sample_descriptive,LLM Divergence
-crude_stocks_change,4,4.6937,0.000882,True,+,5053,full_sample_descriptive,EIA Fundamentals
-refinery_util_pct,3,5.3906,0.001058,True,-,5053,full_sample_descriptive,EIA Fundamentals
-crude_stocks_mbbl_diff,8,2.9768,0.002502,True,+,5053,full_sample_descriptive,EIA Fundamentals
-crude_stocks_mbbl,9,2.79,0.0029,True,+,5053,full_sample_descriptive,EIA Fundamentals
-eia_surprise_norm,2,5.4887,0.004158,True,-,5053,full_sample_descriptive,EIA Fundamentals
-eia_surprise,4,3.4706,0.007735,True,+,5053,full_sample_descriptive,EIA Fundamentals
-crude_production_mbpd_diff,3,1.0128,0.385847,False,-,5053,full_sample_descriptive,EIA Fundamentals
-crude_production_mbpd,4,0.7011,0.59112,False,-,5053,full_sample_descriptive,EIA Fundamentals
+sent_roc_3d,1,6.1836,0.012926,True,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+sent_ema_fast,3,2.9323,0.032215,True,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+sent_rsi,1,3.9422,0.047144,True,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+sent_ema_slow,2,3.0454,0.047667,True,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+sent_ema_cross,1,3.7383,0.053235,False,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+sent_roc_7d,1,3.5694,0.05891,False,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+sent_roc_1d,3,2.3074,0.07455,False,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+sent_velocity,3,2.3074,0.07455,False,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+sent_roc_14d,1,2.5385,0.111164,False,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+sent_accel,9,1.3086,0.226488,False,+,5053,full_sample_descriptive,NLP Sentiment Momentum
+divergence_ema,1,1.3655,0.242635,False,+,5064,full_sample_descriptive,LLM Divergence
+surface_vs_implied_divergence,1,1.094,0.29563,False,+,5064,full_sample_descriptive,LLM Divergence
+divergence_roc,8,0.9173,0.500704,False,+,5064,full_sample_descriptive,LLM Divergence
+crude_stocks_change,4,4.7204,0.000841,True,+,5057,full_sample_descriptive,EIA Fundamentals
+refinery_util_pct,3,5.3139,0.001179,True,-,5057,full_sample_descriptive,EIA Fundamentals
+crude_stocks_mbbl_diff,8,3.0864,0.001785,True,+,5057,full_sample_descriptive,EIA Fundamentals
+crude_stocks_mbbl,9,2.8731,0.002195,True,+,5057,full_sample_descriptive,EIA Fundamentals
+eia_surprise_norm,2,5.51,0.004071,True,-,5057,full_sample_descriptive,EIA Fundamentals
+eia_surprise,4,3.4934,0.007433,True,+,5057,full_sample_descriptive,EIA Fundamentals
+crude_production_mbpd_diff,3,1.0187,0.383173,False,-,5057,full_sample_descriptive,EIA Fundamentals
+crude_production_mbpd,4,0.7029,0.589866,False,-,5057,full_sample_descriptive,EIA Fundamentals
 cot_net_long,1,3.9014,0.048321,True,+,3735,full_sample_descriptive,COT Positioning
 cot_change_1w,2,1.127,0.324113,False,-,3735,full_sample_descriptive,COT Positioning
 cot_net_long_change,2,1.0525,0.34917,False,-,3735,full_sample_descriptive,COT Positioning
