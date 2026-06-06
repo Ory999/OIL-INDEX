@@ -77,7 +77,7 @@ Note: the FinBERT baseline used in the paper (r = 0.13 vs `oil_impact_score`) is
 
 ---
 
-## Index construction
+## PRCSI Index construction
 
 The full PRCSI uses **9 stable features** — variables that were Granger-significant in 20% or more of rolling windows on the 2007 to 2019 training period. Each feature is direction-corrected, ranked as a 252-day rolling percentile, weighted by group, then smoothed with EMA span 63.
 
@@ -104,6 +104,21 @@ severity = |index - 0.5| × 2
 Active signal when `severity ≥ 0.2637` (train-frozen). Direction: `index > 0.5 → BEARISH` (contrarian).
 
 ---
+
+### Price Sentiment Index (PSI)
+
+The PSI is a companion price-action index, used for the divergence signal. Where PRCSI asks whether *institutional sentiment* is extreme, PSI asks whether *price* is extreme. It scores the current WTI move against the most extreme move in the same direction since 2007, on an expanding (self-calibrating) window: a score of 1.0 matches the all-time record rise, 0.5 is flat, and 0.0 matches the all-time record fall.
+
+Four components, combined as a weighted average and smoothed with EMA span 10 — shorter than PRCSI's 63, since price momentum decays in days, not months:
+
+| Component | Weight | Window | What it captures |
+|---|---|---|---|
+| `price_fixed_rank` | 2.5× | expanding since 2007 | Whether the current price is historically extreme (percentile rank of price) |
+| `fg_3m` | 1.5× | 63 days | 3-month move extremity (structural) |
+| `fg_1w` | 0.75× | 5 days | Recent-week acceleration (medium) |
+| `fg_1d` | 0.25× | 1 day | Single-day reaction (tactical) |
+
+The headline signal is the divergence between PRCSI and PSI: when price momentum (PSI) runs well ahead of institutional narrative (PRCSI), the market is moving faster than fundamentals justify (Grossman-Stiglitz 1980). Construction is in `scripts/quant/Quant 93 build psi index.py`.
 
 ## Setup
 
