@@ -84,9 +84,9 @@ STABLE_FEATURES = [
 
 # Top-tier accuracy, OOS 2020 to 2026, recomputed directly from the released
 # prcsi_final series at the 21-day forward horizon (89/119 correct = 0.748;
-# 98/119 = 0.824 at 42d). The earlier 0.868 came from a notebook block
-# construction that is not committed and does not regenerate from this pipeline,
-# so the conservative reproducible figure is used here and on the dashboard.
+# 98/119 = 0.824 at 42d). The earlier 0.868 came from the research notebook
+# (PRCSI Analysis.ipynb) and does not regenerate from this pipeline, so the
+# conservative reproducible figure is used here and on the dashboard.
 TIER_ACCURACY = {
     # 21d OOS = 0.748 reproducible (89/119); 42d OOS = 0.824 (98/119).
     # volatile / stable are frozen-calibration figures, not reproduced here.
