@@ -109,7 +109,7 @@ Active signal when `severity ≥ 0.2637` (train-frozen). Direction: `index > 0.5
 
 The PSI is a companion price-action index, used for the divergence signal. Where PRCSI asks whether *institutional sentiment* is extreme, PSI asks whether *price* is extreme. It scores the current WTI move against the most extreme move in the same direction since 2007, on an expanding (self-calibrating) window: a score of 1.0 matches the all-time record rise, 0.5 is flat, and 0.0 matches the all-time record fall.
 
-Four components, combined as a weighted average and smoothed with EMA span 10 — shorter than PRCSI's 63, since price momentum decays in days, not months:
+Four components, combined as a weighted average and smoothed with EMA span 10 shorter than PRCSI's 63, since price momentum decays in days, not months:
 
 | Component | Weight | Window | What it captures |
 |---|---|---|---|
