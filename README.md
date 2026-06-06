@@ -79,7 +79,7 @@ Note: the FinBERT baseline used in the paper (r = 0.13 vs `oil_impact_score`) is
 
 ## PRCSI Index construction
 
-The full PRCSI uses **9 stable features** — variables that were Granger-significant in 20% or more of rolling windows on the 2007 to 2019 training period. Each feature is direction-corrected, ranked as a 252-day rolling percentile, weighted by group, then smoothed with EMA span 63.
+The full PRCSI uses **9 stable features** variables that were Granger-significant in 20% or more of rolling windows on the 2007 to 2019 training period. Each feature is direction-corrected, ranked as a 252-day rolling percentile, weighted by group, then smoothed with EMA span 63.
 
 | Feature | Group (weight) | Direction code | Reading |
 |---|---|---|---|
