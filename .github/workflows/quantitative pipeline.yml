@@ -1,6 +1,5 @@
 # Quantitative Pipeline.
 # Runs Mon-Fri 06:00 UTC, fetches market data and assembles master dataset.
-# Triggers qualitative pipeline on completion via workflow_run.
 
 name: Quantitative Pipeline
 
